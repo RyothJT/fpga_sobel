@@ -1,0 +1,50 @@
+`timescale 1ns / 1ps
+
+module top(
+        input clk,
+        input btnC,
+        input RsRx,
+        output RsTx,
+        output [15:0] led
+        
+        ,
+        input btnU,
+        input [7:0] sw
+);
+
+//uart_core uart(
+//    .clk(clk),
+//    .rst(btnC),
+//    .RsRx(RsRx),
+//    .RsTx(RsTx),
+//    .rx_data(led[7:0])
+//);
+
+wire valid;
+
+uart_rx #(
+    .ENABLE_ERRORS(1),
+    .BAUD_RATE(115200)
+)rx(
+    .clk(clk),
+    .rst(btnC),
+    .RsRx(RsRx),
+    .rx_data(led[7:0]),
+    .valid_out(led[12]),
+    .status(led[15:13])
+);
+
+uart_tx #(
+    .BAUD_RATE(115200)
+) tx (
+    .clk(clk),
+    .rst(btnC),
+    .tx_start(btnU),
+    .tx_data(sw[7:0]),
+    .RsTx(RsTx),
+    .busy(busy)
+);
+
+
+
+endmodule

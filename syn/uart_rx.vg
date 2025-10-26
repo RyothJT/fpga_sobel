@@ -1,0 +1,194 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 10/16/2025 08:58:28 AM
+// Design Name: 
+// Module Name: uart_rx
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+
+module uart_rx #(
+    parameter ENABLE_ERRORS = 1,
+    parameter DATA_BITS = 8,
+    parameter BAUD_RATE = 9600,
+    parameter CLK_FREQ = 100_000_000,
+    parameter PARITY_EN = 0
+)(
+    input clk,
+    input rst,
+    input RsRx,
+    input ready_in,
+    output reg [(DATA_BITS - 1):0] rx_data,
+    output reg valid_out,
+    
+    output wire [2:0] status
+);
+
+generate
+    if (ENABLE_ERRORS) begin
+        assign status = {framing_error, overrun_error, break_condition};
+    end
+    else if (!ENABLE_ERRORS) begin
+        // tie unused outputs to 0
+        assign status = 0;
+    end
+endgenerate
+
+localparam DIV_SAMPLE = 16,
+           MID_SAMPLE = DIV_SAMPLE / 2,
+           FRAME_LENGTH = (1 + DATA_BITS + 1) * DIV_SAMPLE;
+
+wire baud16_tick;
+
+uart_baud_gen #(
+    .BAUD_RATE(BAUD_RATE),
+    .CLK_FREQ(CLK_FREQ),
+    .OVERSAMPLE(DIV_SAMPLE)
+) baud_gen (
+    .clk(clk),
+    .rst(rst),
+    .baud_tick(baud16_tick)
+);
+
+localparam  IDLE = 3'b000,
+            START = 3'b001,
+            DATA = 3'b010,
+            STOP = 3'b011,
+            ERROR = 3'b100;
+
+wire start_bit_detected;
+wire half_bit_elapsed;
+wire last_data_recieved;
+
+(* fsm_safe_state = "reset_state" *) reg [2:0] state;
+reg [2:0] next_state;
+reg [3:0] bit_counter;
+reg [3:0] sample_counter;
+
+reg framing_error;
+reg overrun_error;
+reg break_condition;
+reg [7:0] break_counter;
+
+assign start_bit_detected = !RsRx;
+assign half_bit_elapsed = sample_counter == (MID_SAMPLE);
+assign last_data_recieved = bit_counter == (DATA_BITS);
+
+always @(*) begin
+    case(state)
+        IDLE: next_state <= start_bit_detected ?  START : IDLE;
+        START: next_state <= (sample_counter == DIV_SAMPLE - 1) ?  DATA : START;
+        DATA: next_state <= last_data_recieved ? STOP : DATA;
+        STOP: next_state <= (bit_counter == 0) ? IDLE : STOP;
+        default: next_state <= IDLE;
+    endcase
+end
+
+always @(posedge clk) begin
+    if (rst) begin
+        rx_data <= 8'b0;
+        valid_out <= 0;
+        bit_counter <= 0;
+        sample_counter <= 0;
+        framing_error <= 0;
+        overrun_error <= 0;
+        break_condition <= 0;
+        break_counter <= 0;
+        state <= IDLE;
+    end
+    else begin
+
+        // Break error checking
+        if (baud16_tick) begin
+            if (RsRx) begin
+                break_counter <= 0;
+                break_condition <= 0;
+            end
+            else begin
+                if (break_counter == FRAME_LENGTH) begin
+                    break_condition <= 1;
+                end
+                else break_counter <= break_counter + 1;
+            end
+        end
+
+        case (state)
+            // Like a reset state, but these variables are just for counting
+            IDLE: begin
+                if (baud16_tick) begin
+                    bit_counter <= 0;
+                    sample_counter <= 0;
+                    
+                    if (start_bit_detected) begin
+                        state <= START;
+                    end
+                end
+            end
+            START: begin // setup for half bit sampling and clear error flags
+                if (baud16_tick) begin
+                    sample_counter <= sample_counter + 1;
+                    bit_counter <= 0;
+                    valid_out <= 0;
+                    
+                    // Reset errors
+                    framing_error <= 0;
+                    overrun_error <= 0;
+                    
+                    // Triggers off falling edge, so need to activate one early.
+                    if (sample_counter == DIV_SAMPLE - 2) begin
+                        state <= DATA;
+                    end
+                end
+            end
+            DATA: begin
+                if (baud16_tick) begin
+                    sample_counter <= sample_counter + 1;
+                    if (half_bit_elapsed) begin
+                        rx_data[bit_counter] <= RsRx;
+                        bit_counter <= bit_counter + 1;
+                    end
+                    
+                    if (last_data_recieved) begin
+                        state <= STOP;
+                    end
+                end
+            end
+            STOP: begin
+                if (baud16_tick) begin
+                    sample_counter <= sample_counter + 1;
+                end
+                // Check if RsRx is high at midpoint
+                if (half_bit_elapsed) begin
+                    bit_counter <= 0;
+                    valid_out <= RsRx;
+                    if (!RsRx) framing_error <= 1;
+                end
+                
+                if (framing_error) begin
+                    // Block until RsRx goes high
+                    if(RsRx) framing_error <= 0;
+                end
+                else if (bit_counter == 0) begin
+                    state <= IDLE;
+                    valid_out <= 0;
+                end
+            end
+            default: ; //error probably
+        endcase
+    end
+end
+    
+endmodule

@@ -1,0 +1,29 @@
+# File:   .gitignore
+# Author: Lev Kujawski <kujaw091@umn.edu>
+
+# Exclude backup files everywhere within the tree:
+*~
+
+# Exclude all root-level entries:
+/*
+# Except for these scaffolding files:
+!/.gitattributes
+!/.gitignore
+!/.pre-commit-config.yaml
+!/Makefile
+!/README.adoc
+!/README.md
+!/bin
+!/constrs
+!/doc
+!/run_*
+!/meta
+# And nested Verilog or VHDL files:
+!/sim
+/sim/*
+!/sim/*.vg
+!/sim/*.vhd
+!/syn
+/syn/*
+!/syn/*.vg
+!/syn/*.vhd

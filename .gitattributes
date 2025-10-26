@@ -1,0 +1,4 @@
+*.tcl linguist-language=Tcl
+*.vg  linguist-language=Verilog
+*.vhd linguist-language=VHDL
+*.xdc linguist-language=Tcl
