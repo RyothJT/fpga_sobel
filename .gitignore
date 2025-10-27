@@ -22,8 +22,10 @@
 !/sim
 /sim/*
 !/sim/*.vg
+!/sim/*.sv
 !/sim/*.vhd
 !/syn
 /syn/*
 !/syn/*.vg
+!/syn/*.sv
 !/syn/*.vhd
