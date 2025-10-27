@@ -53,7 +53,10 @@ module sobel_applier #(
 typedef enum logic [2:0] {
     IDLE,       // Waiting for signal to turn on
     STARTUP,    // Get dimensions of the image
-    DATA,       // Calculate sobel operator and calculate data
+    DATA,
+//    DATA_IN,
+//    DATA_INOUT,       // 
+//    DATA_OUT,   // Output the remaining last row of multiplications after all data recieved
     STOP        // Reach the calculated end of image
 } state_t;
 
@@ -83,6 +86,11 @@ logic [0:1] line_sel;
 logic right, down, left, up;
 
 logic [0:7] bytes_input, bytes_output;
+logic [0:2] config_bytes_recieved;
+
+logic ready_to_process;
+
+logic [31:0] number_bytes_to_send;
 
 // Loop for pipeline delay
 logic [15:0] rd_y_pipeline;
@@ -145,10 +153,41 @@ always_ff @(posedge clk) begin
         rd_y <= 0;
         bytes_input <= 0;
         bytes_output <= 0;
+        ready_to_process <= 0;
+        number_bytes_to_send <= 0;
+        config_bytes_recieved <= 0;
     end else begin
         state <= next_state;
-        if (state == DATA) begin
+        if (state == IDLE) begin
             if (valid_in) begin
+                width[7:0] <= data_in[7:0];
+                config_bytes_recieved <= 1;
+            end
+        end
+        else if (state == STARTUP) begin
+            if (valid_in) begin
+                case (config_bytes_recieved)
+                    1: width[15:8] <= data_in[7:0];
+                    2: height[7:0] <= data_in[7:0];
+                    3: height[15:8] <= data_in[7:0];
+                    default: ;
+                endcase
+                config_bytes_recieved <= config_bytes_recieved + 1;
+            end
+            number_bytes_to_send <= width * height;
+        end
+        else if (state == DATA) begin
+            // Accept data, move shift registers appropriately
+            if (valid_in) begin
+                bytes_input <= bytes_input + 1;
+                ready_to_process <= 1;
+            end
+            
+            // Conditions for this are hard. TODO
+            // Output data, only output when a new data has been recieved or we're at the end of the stream
+            if (ready_out && (ready_to_process || (bytes_input == number_bytes_to_send))) begin
+                ready_to_process <= 0;
+                
                 // TODO Make this understandable
                 case(line_we)
                     BOT: begin
@@ -167,16 +206,7 @@ always_ff @(posedge clk) begin
                         window_bot[2] <= top_out;
                     end
                 endcase
-                bytes_input <= bytes_input + 1;
-            end
-            
-            // Conditions for this are hard. TODO
-            if (ready_out && (bytes_input > bytes_output || valid_in)) begin
-                if (rd_y >= 1) begin
-                    bytes_output <= bytes_output + 1;
-                end
-                // Generate mask for edge cases
-            
+                
                 // Shift the window
                 window_top[0] <= window_top[1];
                 window_top[1] <= window_top[2];
@@ -186,6 +216,22 @@ always_ff @(posedge clk) begin
                 
                 window_bot[0] <= window_bot[1];
                 window_bot[1] <= window_bot[2];
+                
+                if (rd_y >= 1) begin
+                    bytes_output <= bytes_output + 1;
+                end
+                // Generate mask for edge cases
+                // Shift the window
+                if (bytes_input == number_bytes_to_send) begin
+                    window_top[0] <= window_top[1];
+                    window_top[1] <= window_top[2];
+                    
+                    window_mid[0] <= window_mid[1];
+                    window_mid[1] <= window_mid[2];
+                    
+                    window_bot[0] <= window_bot[1];
+                    window_bot[1] <= window_bot[2];
+                end
 
                 // Process data
                 sobel_vertical <= -effective_top[0]-(effective_top[1] << 1)-effective_top[2]
@@ -264,9 +310,8 @@ always_comb begin
         end
         STARTUP: begin
             next_state = STARTUP;
-            if (valid_in) begin
+            if (config_bytes_recieved == 4) begin
                 next_state = DATA;
-                height = data_in;
             end
         end
         DATA: begin
@@ -274,16 +319,18 @@ always_comb begin
             next_state = DATA;
             if (valid_in) begin
                 // Check if we've reached the end
-                if (rd_y == (height)) begin
-                    next_state = STOP;
-                end
     
+                // Fix this condition TODO
                 // Once we have three lines we can start processing and never stop
                 // Skip the first x_input = 0, since this represents the convolution for the previous row
                 if (rd_y >= 2 || (rd_y >= 1 && wr_ptr > 1)) begin
                     valid_out = 1;
                     data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
                 end
+            end
+            
+            if (bytes_output == number_bytes_to_send) begin
+                next_state = STOP;
             end
         end
         STOP: begin

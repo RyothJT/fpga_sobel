@@ -16,6 +16,8 @@ wire busy;
 wire [2:0] status;
 wire valid_out;
 
+logic ready_out = 0;
+
 integer sim_counter = 0;
 
 // Baud generator
@@ -76,6 +78,27 @@ task send_uart_byte;
     end
 endtask
 
+// Simulate TX module by pulsing every 10 cycles
+logic [3:0] baud_div_cnt = 0;
+always_ff @(posedge clk or posedge rst) begin
+    if (rst) begin
+        baud_div_cnt <= 0;
+        ready_out <= 0;
+    end else begin
+        ready_out <= 0; // default low
+        if (baud_tick) begin
+            if (baud_div_cnt == 4'd11) begin
+                baud_div_cnt <= 0;
+                ready_out <= 1; // pulse for one clk
+            end else begin
+                baud_div_cnt <= baud_div_cnt + 1;
+            end
+        end
+    end
+end
+
+
+
 // Test sequence
 reg [9:0] bit_index = 0;
 
@@ -88,13 +111,15 @@ initial begin
     // Send first block of bytes
     @(posedge baud_tick);
     send_uart_byte(8'd5);
-    send_uart_byte(8'd4);
+    send_uart_byte(8'd0);
+    send_uart_byte(8'd8);
+    send_uart_byte(8'd0);
 
     #50000;
 
     // Send second block of bytes
     @(posedge baud_tick);
-    repeat(20) begin
+    repeat(40) begin
         send_uart_byte(bit_index[7:0]);
         bit_index = bit_index + 1;
     end
