@@ -44,7 +44,7 @@ sobel_applier uut (
     .rst(rst),
     .data_in(rx_data),
     .valid_in(valid),
-    .ready_out(),
+    .ready_out(1),
     .data_out(),
     .valid_out(),
     .ready_in()

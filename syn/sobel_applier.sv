@@ -1,5 +1,41 @@
 `timescale 1ns / 1ps
 
+// Move to separate module eventually
+module bram_1k8_dual (
+    // Port A
+    input  logic        clk_a,
+    input  logic        we_a,
+    input  logic [9:0]  addr_a,
+    input  logic [7:0]  din_a,
+    output logic [7:0]  dout_a,
+
+    // Port B
+    input  logic        clk_b,
+    input  logic        we_b,
+    input  logic [9:0]  addr_b,
+    input  logic [7:0]  din_b,
+    output logic [7:0]  dout_b
+);
+
+    // Shared 1K x 8 memory
+    logic [7:0] mem [0:1023];
+
+    // Port A
+    always_ff @(posedge clk_a) begin
+        if (we_a)
+            mem[addr_a] <= din_a;
+        dout_a <= mem[addr_a];
+    end
+
+    // Port B
+    always_ff @(posedge clk_b) begin
+        if (we_b)
+            mem[addr_b] <= din_b;
+        dout_b <= mem[addr_b];
+    end
+endmodule
+
+
 module sobel_applier #(
     parameter DATA_BITS_IN = 8,
     parameter MAX_WIDTH = 32
@@ -21,16 +57,22 @@ typedef enum logic [2:0] {
     STOP        // Reach the calculated end of image
 } state_t;
 
+typedef enum logic [2:0] {
+    TOP = 3'b100,
+    MID = 3'b010,
+    BOT = 3'b001
+} line_write_enable_t;
+
 state_t state, next_state;
 
-logic [15:0] width, height, x_input, y_input, x_output, y_output;
-logic [1:0] top, y_middle, bottom;
+line_write_enable_t line_we;
+
+logic [15:0] width, height, wr_ptr, rd_ptr, wr_y, rd_y;
+
+logic [7:0] top_out, mid_out, bot_out;
 
 logic [7:0] window_top[0:2], window_mid[0:2], window_bot[0:2];
-
-logic [7:0] window[0:2][0:2];
-
-logic [7:0] top_mask[0:2], mid_mask[0:2], bot_mask[0:2];
+logic [7:0] effective_top[0:2], effective_mid[0:2], effective_bot[0:2];
 
 logic [10:0] sobel_vertical, sobel_horizontal;
 logic [9:0] abs_sobel_vertical, abs_sobel_horizontal;
@@ -38,43 +80,171 @@ logic new_line;
 
 logic [0:1] line_sel;
 
-always_comb begin
-    abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
-    abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
-    new_line = x_input == width - 1;
-    x_output = x_input - 4;
-end
+logic right, down, left, up;
 
-logic [7:0] line_buffer [2:0][0:(MAX_WIDTH - 1)];
-logic [9:0] wr_ptr;
+logic [0:7] bytes_input, bytes_output;
+
+// Loop for pipeline delay
+logic [15:0] rd_y_pipeline;
+
+bram_1k8_dual top_line (
+    // WRITE PORT
+    .clk_a(clk),
+    .we_a(line_we[2]),
+    .din_a(data_in),
+    .addr_a(wr_ptr),
+    .dout_a(),
+    
+    // READ PORT
+    .clk_b(clk),
+    .we_b(0),
+    .din_b(0),
+    .addr_b(wr_ptr),
+    .dout_b(top_out)
+);
+
+bram_1k8_dual mid_line (
+    // WRITE PORT
+    .clk_a(clk),
+    .we_a(line_we[1]),
+    .din_a(data_in),
+    .addr_a(wr_ptr),
+    .dout_a(),
+    
+    // READ PORT
+    .clk_b(clk),
+    .we_b(0),
+    .din_b(0),
+    .addr_b(wr_ptr),
+    .dout_b(mid_out)
+);
+
+bram_1k8_dual bot_line (
+    // WRITE PORT
+    .clk_a(clk),
+    .we_a(line_we[0]),
+    .din_a(data_in),
+    .addr_a(wr_ptr),
+    .dout_a(),
+    
+    // READ PORT
+    .clk_b(clk),
+    .we_b(0),
+    .din_b(0),
+    .addr_b(wr_ptr),
+    .dout_b(bot_out)
+);
 
 always_ff @(posedge clk) begin
     if (rst) begin
+        state <= IDLE;
+        line_we <= TOP; // default of top?
         wr_ptr <= 0;
+        line_sel <= 0;
+        wr_y <= 0;
+        rd_y <= 0;
+        bytes_input <= 0;
+        bytes_output <= 0;
     end else begin
-        window_top[0] <= window_top[1];
-        window_top[1] <= window_top[2];
-        window_top[2] <= line_buffer[0][wr_ptr];
-        
-        window_mid[0] <= window_mid[1];
-        window_mid[1] <= window_mid[2];
-        window_mid[2] <= line_buffer[1][wr_ptr];
-        
-        window_bot[0] <= window_bot[1];
-        window_bot[1] <= window_bot[2];
-        window_bot[2] <= line_buffer[2][wr_ptr];
-    
-        // write current pixel
-        line_buffer[line_sel][wr_ptr] <= data_in;
+        state <= next_state;
+        if (state == DATA) begin
+            if (valid_in) begin
+                // TODO Make this understandable
+                case(line_we)
+                    BOT: begin
+                        window_top[2] <= mid_out;
+                        window_mid[2] <= top_out;
+                        window_bot[2] <= bot_out;
+                    end
+                    MID: begin
+                        window_top[2] <= top_out;
+                        window_mid[2] <= bot_out;
+                        window_bot[2] <= mid_out;
+                    end
+                    TOP: begin
+                        window_top[2] <= bot_out;
+                        window_mid[2] <= mid_out;
+                        window_bot[2] <= top_out;
+                    end
+                endcase
+                bytes_input <= bytes_input + 1;
+            end
+            
+            // Conditions for this are hard. TODO
+            if (ready_out && (bytes_input > bytes_output || valid_in)) begin
+                if (rd_y >= 1) begin
+                    bytes_output <= bytes_output + 1;
+                end
+                // Generate mask for edge cases
+            
+                // Shift the window
+                window_top[0] <= window_top[1];
+                window_top[1] <= window_top[2];
+                
+                window_mid[0] <= window_mid[1];
+                window_mid[1] <= window_mid[2];
+                
+                window_bot[0] <= window_bot[1];
+                window_bot[1] <= window_bot[2];
 
-        // advance write address
-        if (wr_ptr == MAX_WIDTH-1) begin
-            wr_ptr   <= 0;
-            line_sel <= (line_sel == 2) ? 0 : line_sel + 1; // wrap on 3
-        end else begin
-            wr_ptr <= wr_ptr + 1;
+                // Process data
+                sobel_vertical <= -effective_top[0]-(effective_top[1] << 1)-effective_top[2]
+                                  +effective_bot[0]+(effective_bot[1] << 1)+effective_bot[2];
+                                  
+                sobel_horizontal <= -effective_top[0] + effective_top[2]
+                                   -(effective_mid[0] << 1) + (effective_mid[2] << 1)
+                                   -effective_bot[0] + effective_bot[2];
+                                   
+                // Pipeline y coordinate
+                rd_y <= rd_y_pipeline;
+                rd_y_pipeline <= wr_y;
+                
+                // Wrap line and increment x coordinate
+                if (new_line) begin
+                    wr_ptr <= 0;
+                    wr_y <= wr_y + 1;
+                    case(line_we)
+                        BOT: line_we <= MID;
+                        MID: line_we <= TOP;
+                        TOP: line_we <= BOT;
+                    endcase
+                end
+                else wr_ptr <= wr_ptr + 1;
+            end
         end
     end
+end
+
+always_comb begin
+    abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
+    abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
+    new_line = (wr_ptr == width - 1);
+    rd_ptr = (wr_ptr >= 2) ? (wr_ptr - 2) : (width - (2 - wr_ptr));
+    
+    // Update conditions for edge checking
+    left = (rd_ptr == 0);
+    down = (rd_y == (height - 0));
+    right = (rd_ptr == (width -1));
+    up = (rd_y <= 1);
+    
+    // TOP LEFT
+    effective_top[0] = (up || left) ? 0 : window_top[0];
+    // TOP MIDDLE
+    effective_top[1] = up ? 0 : window_top[1];
+    // TOP RIGHT
+    effective_top[2] = (up || right) ? 0 : window_top[2];
+    // MIDDLE RIGHT
+    effective_mid[2] = right ? 0 : window_mid[2];
+    // BOTTOM RIGHT
+    effective_bot[2] = (down || right) ? 0 : window_bot[2];
+    // BOTTOM MIDDLE
+    effective_bot[1] = down ? 0 : window_bot[1];
+    // BOTTOM LEFT
+    effective_bot[0] = (down || left) ? 0 : window_bot[0];
+    // MIDDLE LEFT
+    effective_mid[0] = left ? 0 : window_mid[0];
+    // MIDDLE MIDDLE
+    effective_mid[1] = window_mid[1];
 end
 
 // Compute nextstate and output
@@ -84,7 +254,6 @@ always_comb begin
     valid_out = 0;
     ready_in = 0;
 
-    
     case(state)
         IDLE: begin
             data_out = 0;
@@ -104,20 +273,16 @@ always_comb begin
             // Input new data
             next_state = DATA;
             if (valid_in) begin
-                
                 // Check if we've reached the end
-                if (y_input == height) begin
+                if (rd_y == (height)) begin
                     next_state = STOP;
                 end
     
                 // Once we have three lines we can start processing and never stop
                 // Skip the first x_input = 0, since this represents the convolution for the previous row
-                if (y_input >= 2 || (y_input >= 1 && x_input > 1)) begin
+                if (rd_y >= 2 || (rd_y >= 1 && wr_ptr > 1)) begin
                     valid_out = 1;
                     data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
-                    
-                    // Horizontal gradient (Gx)
-
                 end
             end
         end

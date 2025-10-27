@@ -31,11 +31,11 @@ uart_rx #(
 
 sobel_applier uut (
     .clk(clk),
-    .rst(rst),
+    .rst(btnC),
     .data_in(rx_data),
     .valid_in(valid),
     .ready_out(),
-    .data_out(),
+    .data_out(tx_data),
     .valid_out(),
     .ready_in()
 );
