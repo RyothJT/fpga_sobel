@@ -46,9 +46,9 @@ sobel_applier uut (
     .rst(rst),
     .data_in(rx_data),
     .valid_in(valid),
-    .ready_out(1),
+    .ready_out(ready_out),
     .data_out(),
-    .valid_out(),
+    .valid_out(valid_out),
     .ready_in()
 );
 
@@ -87,7 +87,7 @@ always_ff @(posedge clk or posedge rst) begin
     end else begin
         ready_out <= 0; // default low
         if (baud_tick) begin
-            if (baud_div_cnt == 4'd11) begin
+            if (baud_div_cnt == 4'd9) begin
                 baud_div_cnt <= 0;
                 ready_out <= 1; // pulse for one clk
             end else begin
@@ -102,6 +102,9 @@ end
 // Test sequence
 reg [9:0] bit_index = 0;
 
+logic [31:0] bits_sent = 0;
+always @(posedge valid_out) bits_sent <= bits_sent + 1; 
+
 initial begin
     // Apply reset
     #100;
@@ -110,22 +113,25 @@ initial begin
 
     // Send first block of bytes
     @(posedge baud_tick);
-    send_uart_byte(8'd5);
+    send_uart_byte(8'd16);
     send_uart_byte(8'd0);
-    send_uart_byte(8'd8);
+    send_uart_byte(8'd16);
     send_uart_byte(8'd0);
 
     #50000;
 
     // Send second block of bytes
     @(posedge baud_tick);
-    repeat(40) begin
+    repeat(16*16 - 1) begin
         send_uart_byte(bit_index[7:0]);
         bit_index = bit_index + 1;
     end
+    
+    #500000;
+    send_uart_byte(bit_index[7:0]);
 
     // Wait for remaining data to be transmitted
-    #500000;
+    #10000000;
     $finish;
 end
 

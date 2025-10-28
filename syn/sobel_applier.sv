@@ -85,10 +85,10 @@ logic [0:1] line_sel;
 
 logic right, down, left, up;
 
-logic [0:7] bytes_input, bytes_output;
-logic [0:2] config_bytes_recieved;
+logic [31:0] bytes_input, bytes_output;
+logic [2:0] config_bytes_recieved;
 
-logic ready_to_process;
+logic ready_to_send;
 
 logic [31:0] number_bytes_to_send;
 
@@ -153,9 +153,10 @@ always_ff @(posedge clk) begin
         rd_y <= 0;
         bytes_input <= 0;
         bytes_output <= 0;
-        ready_to_process <= 0;
+        ready_to_send <= 0;
         number_bytes_to_send <= 0;
         config_bytes_recieved <= 0;
+        valid_out <= 0;
     end else begin
         state <= next_state;
         if (state == IDLE) begin
@@ -177,18 +178,29 @@ always_ff @(posedge clk) begin
             number_bytes_to_send <= width * height;
         end
         else if (state == DATA) begin
+            valid_out <= 0;
             // Accept data, move shift registers appropriately
             if (valid_in) begin
                 bytes_input <= bytes_input + 1;
-                ready_to_process <= 1;
+                ready_to_send <= 1;
+                
+                // Wrap line and increment x coordinate
+                // Something is wrong with wr_ptr...
             end
             
-            // Conditions for this are hard. TODO
-            // Output data, only output when a new data has been recieved or we're at the end of the stream
-            if (ready_out && (ready_to_process || (bytes_input == number_bytes_to_send))) begin
-                ready_to_process <= 0;
-                
-                // TODO Make this understandable
+            if (valid_in || (ready_out && bytes_input == number_bytes_to_send)) begin
+                if (new_line) begin
+                    wr_ptr <= 0;
+                    wr_y <= wr_y + 1;
+                    case(line_we)
+                        BOT: line_we <= MID;
+                        MID: line_we <= TOP;
+                        TOP: line_we <= BOT;
+                    endcase
+                end
+                else wr_ptr <= wr_ptr + 1;
+                        
+                // TODO Make this understandable   
                 case(line_we)
                     BOT: begin
                         window_top[2] <= mid_out;
@@ -216,21 +228,17 @@ always_ff @(posedge clk) begin
                 
                 window_bot[0] <= window_bot[1];
                 window_bot[1] <= window_bot[2];
+            end
+            
+            // Conditions for this are hard. TODO
+            // Output data, only output when a new data has been recieved or we're at the end of the stream
+            if (ready_out && (ready_to_send || bytes_input == number_bytes_to_send)) begin
+                ready_to_send <= 0;
                 
+        
                 if (rd_y >= 1) begin
                     bytes_output <= bytes_output + 1;
-                end
-                // Generate mask for edge cases
-                // Shift the window
-                if (bytes_input == number_bytes_to_send) begin
-                    window_top[0] <= window_top[1];
-                    window_top[1] <= window_top[2];
-                    
-                    window_mid[0] <= window_mid[1];
-                    window_mid[1] <= window_mid[2];
-                    
-                    window_bot[0] <= window_bot[1];
-                    window_bot[1] <= window_bot[2];
+                    valid_out <= 1;
                 end
 
                 // Process data
@@ -244,18 +252,6 @@ always_ff @(posedge clk) begin
                 // Pipeline y coordinate
                 rd_y <= rd_y_pipeline;
                 rd_y_pipeline <= wr_y;
-                
-                // Wrap line and increment x coordinate
-                if (new_line) begin
-                    wr_ptr <= 0;
-                    wr_y <= wr_y + 1;
-                    case(line_we)
-                        BOT: line_we <= MID;
-                        MID: line_we <= TOP;
-                        TOP: line_we <= BOT;
-                    endcase
-                end
-                else wr_ptr <= wr_ptr + 1;
             end
         end
     end
@@ -297,15 +293,12 @@ end
 always_comb begin
     // default values
     next_state = IDLE;
-    valid_out = 0;
     ready_in = 0;
 
     case(state)
         IDLE: begin
-            data_out = 0;
             if (valid_in) begin
                 next_state = STARTUP;
-                width = data_in;
             end
         end
         STARTUP: begin
@@ -317,17 +310,8 @@ always_comb begin
         DATA: begin
             // Input new data
             next_state = DATA;
-            if (valid_in) begin
-                // Check if we've reached the end
-    
-                // Fix this condition TODO
-                // Once we have three lines we can start processing and never stop
-                // Skip the first x_input = 0, since this represents the convolution for the previous row
-                if (rd_y >= 2 || (rd_y >= 1 && wr_ptr > 1)) begin
-                    valid_out = 1;
-                    data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
-                end
-            end
+            // Check if we've reached the end
+            data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
             
             if (bytes_output == number_bytes_to_send) begin
                 next_state = STOP;
