@@ -29,3 +29,6 @@
 !/syn/*.vg
 !/syn/*.sv
 !/syn/*.vhd
+
+# And images
+!/*.png
