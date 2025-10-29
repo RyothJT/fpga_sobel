@@ -3,7 +3,7 @@ module uart_baud_gen #(
     parameter BAUD_RATE  = 9600,
     parameter CLK_FREQ   = 100_000_000,
     parameter OVERSAMPLE = 1,
-    parameter ACC_WIDTH  = 16
+    parameter ACC_WIDTH  = 32
 )(
     input  wire clk,
     input  wire rst,

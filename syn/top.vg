@@ -8,6 +8,7 @@ module top(
         output [15:0] led
 );
 
+localparam BAUD_RATE = 256000;
 
 wire [7:0] rx_data;
 wire [7:0] tx_data;
@@ -17,7 +18,7 @@ wire busy;
 
 uart_rx #(
     .ENABLE_ERRORS(1),
-    .BAUD_RATE(115200)
+    .BAUD_RATE(BAUD_RATE)
 )rx(
     .clk(clk),
     .rst(btnC),
@@ -39,7 +40,7 @@ sobel_applier uut (
 );
 
 uart_tx #(
-    .BAUD_RATE(115200)
+    .BAUD_RATE(BAUD_RATE)
 ) tx (
     .clk(clk),
     .rst(btnC),
