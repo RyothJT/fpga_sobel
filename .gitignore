@@ -32,3 +32,6 @@
 
 # And images
 !/*.png
+
+# And python scripts
+!/*.py
