@@ -11,7 +11,7 @@ BAUD = 256000
 k = 0 # number of bottom rows to exclue to guarentee image generation
 
 # --- Load image ---
-img = Image.open("test_image.jpg").convert("L")
+img = Image.open("loris_1708p.jpg").convert("L")
 
 # Rotate if width > height
 rotated = False

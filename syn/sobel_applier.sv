@@ -18,7 +18,7 @@ module bram_1k8_dual (
 );
 
     // Shared 1K x 8 memory
-    logic [7:0] mem [0:1023];
+    logic [7:0] mem [0:2047]; // Doubled to 2kB each, almost enough for 4k images
 
     // Port A
     always_ff @(posedge clk_a) begin
