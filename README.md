@@ -6,11 +6,11 @@ No separate IP used. All code written by Justin Troth, with the exception of the
 
 Outputs the edges of a given image using the sobel operator. A python script decodes theh image into grayscale values. The width and height of the images are then sent over UART as 16 bit numbers. The brightness value of each pixel is then sent over as 8 bits numbers, from top-left to bottom-right. Once there is enough information, the FPGA starts processing and outputting concurrently with the input. The output is then recompiled as an image of the same size by the python script.
 
-// Before //
-<img width="748" height="480" alt="loris_480p" src="https://github.com/user-attachments/assets/308c19c3-77b0-444d-a798-06ce48c1b353" />
-
-// After // (TODO update image, this one has some small errors in it from a previous version)
-<img width="748" height="478" alt="image" src="https://github.com/user-attachments/assets/c4a280d0-dfa2-473d-95c0-8b7f92f596ba" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/308c19c3-77b0-444d-a798-06ce48c1b353" width="48%" alt="Before"/>
+  <img src="https://github.com/user-attachments/assets/c4a280d0-dfa2-473d-95c0-8b7f92f596ba" width="48%" alt="After"/>
+</p>
+<p align="center"><b>Before</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>After</b></p>
 
 # Limitations
 
