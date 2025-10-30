@@ -36,9 +36,7 @@ The module waits in idle until data is recieved. Once data is recieved, it proce
 
 Data starts by accepting the whole first line of the first image without outputting. We do not have enough data to do a convolution yet, and our image would actually get larger if we took started outputting values during this time.
 
-After we have the first line and the first two datapoints of the next line, we can compute the first multiplication. This is the top-left corner of the image. The module masks the data accordingly, such that unknown values are set to 0.
-
-TODO finish this explanation
+After we have the first line and the first two datapoints of the next line, we can compute the first multiplication. This is the top-left corner of the image. The module masks the data accordingly, such that unknown values are set to 0. Computation then starts, and after pipelineing, the result is done, valid_out is set to true for one cycle, and TX outputs the computed value. Output and input takes place concurrently until all the input has been recieved, after which shifting and bit masking is done without input until all pixels have been output. The state reverts to idle and is ready to receive a new image.
 
 # Setup
 
@@ -50,8 +48,8 @@ The COM port is not automatically calibrated. You will have to find which COM pa
 - Reduce WNS signficantly by pipelining more operations
 - Reduce variables
 - Rewrite RX and TX modules in SystemVerilog style as proper Mealy machines
-- Support for different 3x3 convolutions
-- Easy setup for verilog
+- Support for other 3x3 convolutions
+- Easy setup for Vivado
 - Testing using communication method other than UART
 - Get rid of number_bytes_to_send in order to not use DSP slice (currently used for ending condition and troubleshooting)
 - Split DATA into separate segments to appropriately module the three parts of convolution
