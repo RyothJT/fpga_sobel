@@ -323,7 +323,7 @@ always_comb begin
             end
         end
         STOP: begin
-            next_state = STOP;
+            next_state = IDLE;
         end
     endcase
 end

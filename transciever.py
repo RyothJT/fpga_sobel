@@ -11,8 +11,14 @@ BAUD = 256000
 k = 0 # number of bottom rows to exclue to guarentee image generation
 
 # --- Load image ---
-#img = Image.open("test_image.jpg").convert("L")
-img = Image.open("loris_480p.png").convert("L")
+img = Image.open("test_image.jpg").convert("L")
+
+# Rotate if width > height
+rotated = False
+if img.width > img.height:
+    img = img.rotate(90, expand=True)
+    rotated = True
+
 arr = np.array(img, dtype=np.uint8)
 height, width = arr.shape
 data = arr.flatten().tobytes()
@@ -65,7 +71,13 @@ def receiver(timeout=1.0):
 
     print("\nReception complete.")
     result = np.frombuffer(processed, dtype=np.uint8).reshape(((height-k), width))
-    Image.fromarray(result, mode='L').save("output.png")
+    img_out = Image.fromarray(result, mode='L')
+
+    # Rotate back if original was rotated
+    if rotated:
+        img_out = img_out.rotate(-90, expand=True)
+
+    img_out.save("output.png")
     print("Saved output.png")
 
     return processed
