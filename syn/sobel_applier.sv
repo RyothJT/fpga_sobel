@@ -82,7 +82,7 @@ logic [31:0] bytes_input, bytes_output;
 logic [2:0] config_bytes_recieved;
 logic ready_to_send;
 logic [31:0] number_bytes_to_send;
-logic end_sync_flag;
+logic [7:0] latched_data;
 
 // Loop for pipeline delay
 logic [15:0] rd_y_pipeline;
@@ -91,7 +91,7 @@ bram_1k8_dual top_line (
     // WRITE PORT
     .clk_a(clk),
     .we_a(line_we[2]),
-    .din_a(data_in),
+    .din_a(latched_data),
     .addr_a(wr_ptr),
     .dout_a(),
     
@@ -107,7 +107,7 @@ bram_1k8_dual mid_line (
     // WRITE PORT
     .clk_a(clk),
     .we_a(line_we[1]),
-    .din_a(data_in),
+    .din_a(latched_data),
     .addr_a(wr_ptr),
     .dout_a(),
     
@@ -123,7 +123,7 @@ bram_1k8_dual bot_line (
     // WRITE PORT
     .clk_a(clk),
     .we_a(line_we[0]),
-    .din_a(data_in),
+    .din_a(latched_data),
     .addr_a(wr_ptr),
     .dout_a(),
     
@@ -149,7 +149,7 @@ always_ff @(posedge clk) begin
         number_bytes_to_send <= 0;
         config_bytes_recieved <= 0;
         valid_out <= 0;
-        end_sync_flag <= 0;
+        latched_data <= 0;
     end else begin
         state <= next_state;
         if (state == IDLE) begin
@@ -176,15 +176,21 @@ always_ff @(posedge clk) begin
             if (valid_in) begin
                 bytes_input <= bytes_input + 1;
                 ready_to_send <= 1;
+                latched_data <= data_in;
                 
                 // Wrap line and increment x coordinate
                 // Something is wrong with wr_ptr...
             end
             
-            // I hate this logic and want to replace it with something better TODO
-            // This needs to be here because otherwise one bit will be skipped when
-            // We switch from input and output at the same time to just output
             if (valid_in || (ready_out && bytes_input == number_bytes_to_send)) begin
+
+            end
+            
+            // Conditions for this are hard. TODO
+            // Output data, only output when a new data has been recieved or we're at the end of the stream
+            if (ready_out && (ready_to_send || bytes_input == number_bytes_to_send)) begin
+                ready_to_send <= 0;
+                
                 if (new_line) begin
                     wr_ptr <= 0;
                     wr_y <= wr_y + 1;
@@ -224,13 +230,6 @@ always_ff @(posedge clk) begin
                 
                 window_bot[0] <= window_bot[1];
                 window_bot[1] <= window_bot[2];
-            end
-            
-            // Conditions for this are hard. TODO
-            // Output data, only output when a new data has been recieved or we're at the end of the stream
-            if (ready_out && (ready_to_send || bytes_input == number_bytes_to_send)) begin
-                ready_to_send <= 0;
-                
         
                 if (rd_y >= 1) begin
                     bytes_output <= bytes_output + 1;

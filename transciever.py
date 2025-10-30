@@ -11,7 +11,7 @@ BAUD = 256000
 k = 0 # number of bottom rows to exclue to guarentee image generation
 
 # --- Load image ---
-img = Image.open("loris_32p.png").convert("L")
+img = Image.open("loris_480p.png").convert("L")
 arr = np.array(img, dtype=np.uint8)
 height, width = arr.shape
 data = arr.flatten().tobytes()

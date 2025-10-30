@@ -130,20 +130,20 @@ initial begin
     rst = 1;
     #10000000;
     rst = 0;
-    bit_index = 1;
+    bit_index = 0;
     
     @(posedge baud_tick);
-    send_uart_byte(8'd16);
+    send_uart_byte(8'd12);
     send_uart_byte(8'd0);
-    send_uart_byte(8'd16);
+    send_uart_byte(8'd8);
     send_uart_byte(8'd0);
     
     #50000;
     
     @(posedge baud_tick);
-    repeat(16*16) begin
+    repeat(12*8) begin
         send_uart_byte(bit_index[7:0]);
-        bit_index = bit_index * 5;
+        bit_index = bit_index + 1;
     end
 
     // Wait for remaining data to be transmitted
