@@ -11,6 +11,7 @@ BAUD = 256000
 k = 0 # number of bottom rows to exclue to guarentee image generation
 
 # --- Load image ---
+#img = Image.open("test_image.jpg").convert("L")
 img = Image.open("loris_480p.png").convert("L")
 arr = np.array(img, dtype=np.uint8)
 height, width = arr.shape
@@ -22,6 +23,8 @@ ser = serial.Serial(PORT, baudrate=BAUD)
 print("Pixels expected:", width * height)
 
 # --- Thread functions ---
+import time
+
 def sender():
     ser.reset_input_buffer()
     ser.reset_output_buffer()
@@ -30,11 +33,9 @@ def sender():
     ser.write(height.to_bytes(2, 'little'))
     ser.write(data)
 
-    # chunk_size = 100
-    # for i in range(0, len(data), chunk_size):
-    #     ser.write(data[i:i + chunk_size])
-    #     ser.flush()      # ensure data is sent
-
+    # for b in data:
+    #     ser.write(bytes([b]))
+    #     time.sleep(0.01)  # 200 ms delay per byte
 
     print("Image sent.")
 
@@ -46,16 +47,21 @@ def receiver(timeout=1.0):
     total = width * (height - k)
     start_time = time.time()
 
+    total = width * (height - k)
+    start_time = time.time()
+
     while len(processed) < total:
         if ser.in_waiting:
             byte = ser.read(1)
             processed.extend(byte)
             start_time = time.time()  # reset timer
+            #print(f"\r{len(processed)}/{total} pixels received", end="")
         elif time.time() - start_time > timeout:
             remaining = total - len(processed)
             processed.extend(b'\xFF' * remaining)
             print(f"\nTimeout. Filled {remaining} pixels with white.")
             break
+
 
     print("\nReception complete.")
     result = np.frombuffer(processed, dtype=np.uint8).reshape(((height-k), width))

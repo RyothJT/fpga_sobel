@@ -48,7 +48,13 @@ module sobel_applier #(
     output logic [(DATA_BITS_IN - 1):0] data_out,
     output logic valid_out,
     output logic ready_in         // This remains unused because the UART can not stop, but kept for modularity
+    
+    ,
+    output [7:0] led
 );
+
+// DEBUG
+assign led = bytes_output[7:0];
 
 typedef enum logic [2:0] {
     IDLE,       // Waiting for signal to turn on
@@ -139,20 +145,23 @@ always_ff @(posedge clk) begin
     if (rst) begin
         state <= IDLE;
         line_we <= TOP; // default of top?
-        wr_ptr <= 0;
-        wr_y <= 0;
-        rd_y <= 0;
-        rd_y_pipeline <= 0;
-        bytes_input <= 0;
-        bytes_output <= 0;
-        ready_to_send <= 0;
-        number_bytes_to_send <= 0;
-        config_bytes_recieved <= 0;
-        valid_out <= 0;
-        latched_data <= 0;
     end else begin
         state <= next_state;
+        
         if (state == IDLE) begin
+            wr_ptr <= 0;
+            wr_y <= 0;
+            rd_y <= 0;
+            rd_y_pipeline <= 0;
+            bytes_input <= 0;
+            bytes_output <= 0;
+            ready_to_send <= 0;
+            number_bytes_to_send <= 0;
+            config_bytes_recieved <= 0;
+            valid_out <= 0;
+            latched_data <= 0;
+            
+            // wait until we recieve a byte
             if (valid_in) begin
                 width[7:0] <= data_in[7:0];
                 config_bytes_recieved <= 1;
@@ -173,7 +182,7 @@ always_ff @(posedge clk) begin
         else if (state == DATA) begin
             valid_out <= 0;
             // Accept data, move shift registers appropriately
-            if (valid_in) begin
+            if (valid_in || bytes_input >= number_bytes_to_send) begin
                 bytes_input <= bytes_input + 1;
                 ready_to_send <= 1;
                 latched_data <= data_in;
@@ -182,13 +191,10 @@ always_ff @(posedge clk) begin
                 // Something is wrong with wr_ptr...
             end
             
-            if (valid_in || (ready_out && bytes_input == number_bytes_to_send)) begin
-
-            end
-            
             // Conditions for this are hard. TODO
             // Output data, only output when a new data has been recieved or we're at the end of the stream
-            if (ready_out && (ready_to_send || bytes_input == number_bytes_to_send)) begin
+            //if (ready_out && ready_to_send) begin
+            if (ready_out && (ready_to_send)) begin
                 ready_to_send <= 0;
                 
                 if (new_line) begin
@@ -248,6 +254,12 @@ always_ff @(posedge clk) begin
                 rd_y <= rd_y_pipeline;
                 rd_y_pipeline <= wr_y;
             end
+            
+//            // Last row and some extras
+//            else if (ready_out && bytes_input == number_bytes_to_send) begin
+//                bytes_output <= bytes_output + 1;
+//                valid_out <= 1;
+//            end
         end
     end
 end

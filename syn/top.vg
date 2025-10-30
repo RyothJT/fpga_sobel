@@ -37,6 +37,9 @@ sobel_applier uut (
     .data_out(tx_data),
     .valid_out(valid2),
     .ready_in()
+    
+    ,
+    .led(led[7:0])
 );
 
 uart_tx #(
