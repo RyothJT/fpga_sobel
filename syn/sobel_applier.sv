@@ -71,26 +71,18 @@ state_t state, next_state;
 line_write_enable_t line_we;
 
 logic [15:0] width, height, wr_ptr, rd_ptr, wr_y, rd_y;
-
 logic [7:0] top_out, mid_out, bot_out;
-
 logic [7:0] window_top[0:2], window_mid[0:2], window_bot[0:2];
 logic [7:0] effective_top[0:2], effective_mid[0:2], effective_bot[0:2];
-
 logic [10:0] sobel_vertical, sobel_horizontal;
 logic [9:0] abs_sobel_vertical, abs_sobel_horizontal;
 logic new_line;
-
-logic [0:1] line_sel;
-
 logic right, down, left, up;
-
 logic [31:0] bytes_input, bytes_output;
 logic [2:0] config_bytes_recieved;
-
 logic ready_to_send;
-
 logic [31:0] number_bytes_to_send;
+logic end_sync_flag;
 
 // Loop for pipeline delay
 logic [15:0] rd_y_pipeline;
@@ -148,15 +140,16 @@ always_ff @(posedge clk) begin
         state <= IDLE;
         line_we <= TOP; // default of top?
         wr_ptr <= 0;
-        line_sel <= 0;
         wr_y <= 0;
         rd_y <= 0;
+        rd_y_pipeline <= 0;
         bytes_input <= 0;
         bytes_output <= 0;
         ready_to_send <= 0;
         number_bytes_to_send <= 0;
         config_bytes_recieved <= 0;
         valid_out <= 0;
+        end_sync_flag <= 0;
     end else begin
         state <= next_state;
         if (state == IDLE) begin
@@ -188,6 +181,9 @@ always_ff @(posedge clk) begin
                 // Something is wrong with wr_ptr...
             end
             
+            // I hate this logic and want to replace it with something better TODO
+            // This needs to be here because otherwise one bit will be skipped when
+            // We switch from input and output at the same time to just output
             if (valid_in || (ready_out && bytes_input == number_bytes_to_send)) begin
                 if (new_line) begin
                     wr_ptr <= 0;
@@ -257,42 +253,41 @@ always_ff @(posedge clk) begin
     end
 end
 
-always_comb begin
-    abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
-    abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
-    new_line = (wr_ptr == width - 1);
-    rd_ptr = (wr_ptr >= 2) ? (wr_ptr - 2) : (width - (2 - wr_ptr));
+
+assign abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
+assign abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
+assign new_line = (wr_ptr == width - 1);
+assign rd_ptr = (wr_ptr >= 2) ? (wr_ptr - 2) : (width - (2 - wr_ptr));
     
     // Update conditions for edge checking
-    left = (rd_ptr == 0);
-    down = (rd_y == (height - 0));
-    right = (rd_ptr == (width -1));
-    up = (rd_y <= 1);
+assign left = (rd_ptr == 0);
+assign down = (rd_y == (height - 0));
+assign right = (rd_ptr == (width -1));
+assign up = (rd_y <= 1);
     
     // TOP LEFT
-    effective_top[0] = (up || left) ? 0 : window_top[0];
+assign effective_top[0] = (up || left) ? 0 : window_top[0];
     // TOP MIDDLE
-    effective_top[1] = up ? 0 : window_top[1];
+assign effective_top[1] = up ? 0 : window_top[1];
     // TOP RIGHT
-    effective_top[2] = (up || right) ? 0 : window_top[2];
+assign effective_top[2] = (up || right) ? 0 : window_top[2];
     // MIDDLE RIGHT
-    effective_mid[2] = right ? 0 : window_mid[2];
+assign effective_mid[2] = right ? 0 : window_mid[2];
     // BOTTOM RIGHT
-    effective_bot[2] = (down || right) ? 0 : window_bot[2];
+assign effective_bot[2] = (down || right) ? 0 : window_bot[2];
     // BOTTOM MIDDLE
-    effective_bot[1] = down ? 0 : window_bot[1];
+assign effective_bot[1] = down ? 0 : window_bot[1];
     // BOTTOM LEFT
-    effective_bot[0] = (down || left) ? 0 : window_bot[0];
+assign effective_bot[0] = (down || left) ? 0 : window_bot[0];
     // MIDDLE LEFT
-    effective_mid[0] = left ? 0 : window_mid[0];
+assign effective_mid[0] = left ? 0 : window_mid[0];
     // MIDDLE MIDDLE
-    effective_mid[1] = window_mid[1];
-end
+assign effective_mid[1] = window_mid[1];
 
 // Compute nextstate and output
 always_comb begin
     // default values
-    next_state = IDLE;
+    next_state = state;
     ready_in = 0;
 
     case(state)
@@ -310,7 +305,6 @@ always_comb begin
         DATA: begin
             // Input new data
             next_state = DATA;
-            // Check if we've reached the end
             data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
             
             if (bytes_output == number_bytes_to_send) begin

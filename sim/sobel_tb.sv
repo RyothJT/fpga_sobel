@@ -113,22 +113,38 @@ initial begin
 
     // Send first block of bytes
     @(posedge baud_tick);
-    send_uart_byte(8'd16);
+    send_uart_byte(8'd8);
     send_uart_byte(8'd0);
-    send_uart_byte(8'd16);
+    send_uart_byte(8'd8);
     send_uart_byte(8'd0);
 
     #50000;
 
     // Send second block of bytes
     @(posedge baud_tick);
-    repeat(16*16 - 1) begin
+    repeat(8*6) begin
         send_uart_byte(bit_index[7:0]);
         bit_index = bit_index + 1;
     end
     
-    #500000;
-    send_uart_byte(bit_index[7:0]);
+    rst = 1;
+    #10000000;
+    rst = 0;
+    bit_index = 1;
+    
+    @(posedge baud_tick);
+    send_uart_byte(8'd16);
+    send_uart_byte(8'd0);
+    send_uart_byte(8'd16);
+    send_uart_byte(8'd0);
+    
+    #50000;
+    
+    @(posedge baud_tick);
+    repeat(16*16) begin
+        send_uart_byte(bit_index[7:0]);
+        bit_index = bit_index * 5;
+    end
 
     // Wait for remaining data to be transmitted
     #10000000;
