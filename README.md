@@ -8,17 +8,18 @@ Outputs the edges of a given image using the sobel operator. A python script dec
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/308c19c3-77b0-444d-a798-06ce48c1b353" width="48%" alt="Before"/>
-  <img src="https://github.com/user-attachments/assets/c4a280d0-dfa2-473d-95c0-8b7f92f596ba" width="48%" alt="After"/>
+  <img src="https://github.com/user-attachments/assets/4e83ea6a-7594-40fc-a76e-e1b46e0edb18" width="48%" alt="After"/>
+
 </p>
 <p align="center"><b>Before</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>After</b></p>
 
 # Limitations
 
-The main constraint of this implementation is UART. UART is not intedned for this purpose, but is the only mode of communication available on the Basys-3 board. UART is set to be 256000 baud in this implementation. This is the fastest supported speed on my computer's serial controller. Higher speeds can work somewhat, but clocking is not consistent, resulting in image distortion.
+The main constraint of this implementation is UART. UART is not intedned for this purpose, but is the only mode of communication available on the Basys-3 board. UART is set to be 448000 baud in this implementation, as this is the fastest baud rate I was able to use without package loss.
 
-(256000 bits/s)(1 byte/10 bits) = 25.6 kB/s.
+(448000 bits/s)(1 byte/10 bits) = 44.8 kB/s.
 
-This is not fast enough for this application. It takes approximately 43 seconds to send a "small" 748x480 image.
+This speed not fast enough for effective image processing. Currently it is a decellerator. It takes approximately 9 seconds to send a "small" 748x480 image.
 
 When evaluating the actual edges of the image (x = 0, y = height -1...), unknown values are considered as '0'. This leads to the edges of the image almost always being marked with large values. This was actually helpful for troubleshooting, but are not true edges and should not be evaluated as such. This can be fixed by modifying the mask to grab the nearest known value, although this becomes more complicated with corners and which value to take.
 
