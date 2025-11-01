@@ -44,16 +44,15 @@ The COM port is not automatically calibrated. You will have to find which COM pa
 
 # Goals
 
-- Fix alignment issue on straight lines (somehow warped)?
-
-- Support for images up to an arbitrarily size, assuming one side is less than 4096 pixels. (Currently only works with 1024 pixels due to BRAM structure)
-- Rewrite indexing syntax to be human readable, currently names are misleading
-- Reduce WNS signficantly by pipelining more operations
 - Reduce variables
 - Rewrite RX and TX modules in SystemVerilog style as proper Mealy machines
+- Rewrite indexing syntax to be human readable, currently names are misleading
+- Reduce WNS signficantly by pipelining more operations, make more explicit
+- Split DATA into separate segments to appropriately module the three parts of convolution
+- Support for images up to an arbitrarily size, assuming one side is less than 4096 pixels. (Currently only works with 1024 pixels due to BRAM structure)
 - Support for other 3x3 convolutions
 - Easy setup for Vivado
 - Testing using communication method other than UART
-- Get rid of number_bytes_to_send in order to not use DSP slice (currently used for ending condition and troubleshooting)
-- Split DATA into separate segments to appropriately module the three parts of convolution
-- More explicit pipelining
+
+- ~~Get rid of number_bytes_to_send in order to not use DSP slice (currently used for ending condition and troubleshooting)~~
+- ~~Fix alignment issue on straight lines (somehow warped)?~~ Fixed by setting baud rate to a multiple of 112000 (may vary by computer)
