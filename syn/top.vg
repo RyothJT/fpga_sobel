@@ -27,7 +27,7 @@ uart_rx #(
     .RsRx(RsRx),
     .rx_data(rx_data),
     .valid_out(valid),
-    .status(led[15:13])
+    .status()
 );
 
 sobel_applier uut (
@@ -41,7 +41,7 @@ sobel_applier uut (
     .ready_in()
     
     ,
-    .led(led[7:0])
+    .led(led)
 );
 
 uart_tx #(

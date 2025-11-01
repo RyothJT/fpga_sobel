@@ -13,8 +13,10 @@ k = 0 # number of bottom rows to exclue to guarentee image generation
 # --- Load image ---
 # img = Image.open("test_image.jpg").convert("L")
 # img = Image.open("horiz_480p.png").convert("L")
-img = Image.open("vertical_480p.png").convert("L")
-# img = Image.open("loris_128p.png").convert("L")
+# img = Image.open("vertical_480p.png").convert("L")
+img = Image.open("test_image_3.png").convert("L")
+# img = Image.open("loris_480p.png").convert("L")
+# img = Image.open("loris_2037p.jpg").convert("L")
 
 
 # Rotate if width > height
@@ -43,18 +45,20 @@ def sender():
     ser.write(height.to_bytes(2, 'little'))
 
     ser.write(data)
+    # print(data)
 
-    # pack_size = 100
+    # pack_size = 1
     # for i in range(0, len(data), pack_size):
     #     pack = data[i:i + pack_size]
+    #     print(pack)
     #     ser.write(pack)
     #     ser.flush()  # ensure transmission completes before next pack
-    #     time.sleep(0.001)  # small delay between packs
+    #     time.sleep(0.5)  # small delay between packs
 
     print("Image sent.")
 
 
-def receiver(timeout=1.0):
+def receiver(timeout=10.0):
     print("Start receiving...")
     processed = bytearray()
 
@@ -76,7 +80,7 @@ def receiver(timeout=1.0):
             print(f"\nTimeout. Filled {remaining} pixels with white.")
             break
 
-
+    # print(processed)
     print("\nReception complete.")
     result = np.frombuffer(processed, dtype=np.uint8).reshape(((height-k), width))
     img_out = Image.fromarray(result, mode='L')

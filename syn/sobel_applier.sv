@@ -18,7 +18,7 @@ module bram_1k8_dual (
 );
 
     // Shared 2K x 8 memory
-    logic [7:0] mem [0:2047]; // Doubled to 2kB each, almost enough for 4k images
+    logic [7:0] mem [0:1023]; // Doubled to 2kB each, almost enough for 4k images
 
     // Port A
     always_ff @(posedge clk_a) begin
@@ -55,7 +55,7 @@ module sobel_applier #(
 
 // DEBUG
 assign led[7:0] = bytes_output[7:0];
-assign led[15:8] = wr_y[7:0];
+assign led[15:8] = latched_data[7:0];
 
 typedef enum logic [2:0] {
     IDLE,       // Waiting for signal to turn on
@@ -81,8 +81,9 @@ logic [15:0] width, height, wr_ptr, rd_ptr, wr_y, rd_y;
 logic [7:0] top_out, mid_out, bot_out;
 logic [7:0] window_top[0:2], window_mid[0:2], window_bot[0:2];
 logic [7:0] effective_top[0:2], effective_mid[0:2], effective_bot[0:2];
-logic [10:0] sobel_vertical, sobel_horizontal;
-logic [9:0] abs_sobel_vertical, abs_sobel_horizontal;
+logic [11:0] sobel_vertical, sobel_horizontal;
+logic [10:0] abs_sobel_vertical, abs_sobel_horizontal;
+logic [11:0] sobel_sum;
 logic new_line;
 logic right, down, left, up;
 logic [31:0] bytes_input, bytes_output;
@@ -241,11 +242,11 @@ always_ff @(posedge clk) begin
                 end
 
                 // Process data
-                sobel_vertical <= -effective_top[0]-(effective_top[1] << 1)-effective_top[2]
-                                  +effective_bot[0]+(effective_bot[1] << 1)+effective_bot[2];
+                sobel_vertical <= -effective_top[0]-(effective_top[1] * 2)-effective_top[2]
+                                  +effective_bot[0]+(effective_bot[1] * 2)+effective_bot[2];
                                   
                 sobel_horizontal <= -effective_top[0] + effective_top[2]
-                                   -(effective_mid[0] << 1) + (effective_mid[2] << 1)
+                                   -(effective_mid[0] * 2) + (effective_mid[2] * 2)
                                    -effective_bot[0] + effective_bot[2];
                                    
                 // Pipeline y coordinate
@@ -270,20 +271,28 @@ assign up = (rd_y <= 1);
     
     // TOP LEFT
 assign effective_top[0] = (up || left) ? 0 : window_top[0];
+//assign effective_top[0] = (up) ? (left) ? window_mid[0] : window_top[1] : window_top[0];
     // TOP MIDDLE
 assign effective_top[1] = up ? 0 : window_top[1];
+//assign effective_top[1] = up ? window_mid[1] : window_top[1];
     // TOP RIGHT
 assign effective_top[2] = (up || right) ? 0 : window_top[2];
+//assign effective_top[2] = up ? right ? window_mid[2] : window_top[1] : window_top[2];
     // MIDDLE RIGHT
 assign effective_mid[2] = right ? 0 : window_mid[2];
+//assign effective_mid[2] = right ? window_mid[1] : window_mid[2];
     // BOTTOM RIGHT
 assign effective_bot[2] = (down || right) ? 0 : window_bot[2];
+//assign effective_bot[2] = down ? right ? window_mid[2] : window_bot[1] : window_bot[2];
     // BOTTOM MIDDLE
 assign effective_bot[1] = down ? 0 : window_bot[1];
+//assign effective_bot[1] = down ? window_mid[1] : window_bot[1];
     // BOTTOM LEFT
 assign effective_bot[0] = (down || left) ? 0 : window_bot[0];
+//assign effective_bot[0] = down ? left ? window_mid[0] : window_bot[1] : window_bot[0];
     // MIDDLE LEFT
 assign effective_mid[0] = left ? 0 : window_mid[0];
+//assign effective_mid[0] = left ? window_mid[1] : window_mid[0];
     // MIDDLE MIDDLE
 assign effective_mid[1] = window_mid[1];
 
@@ -308,7 +317,8 @@ always_comb begin
         DATA: begin
             // Input new data
             next_state = DATA;
-            data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
+            sobel_sum = (abs_sobel_vertical + abs_sobel_horizontal);
+            data_out = (sobel_sum >> 3);
             
             if (rd_y >= (height + 1) && rd_ptr > 0) begin
                 next_state = STOP;
