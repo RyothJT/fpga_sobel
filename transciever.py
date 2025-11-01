@@ -6,12 +6,14 @@ import time
 
 # --- Configuration ---
 PORT = 'COM4'
-BAUD = 256000
+BAUD = 256_000
 
 k = 0 # number of bottom rows to exclue to guarentee image generation
 
 # --- Load image ---
-img = Image.open("loris_1708p.jpg").convert("L")
+# img = Image.open("test_image.jpg").convert("L")
+img = Image.open("loris_480p.png").convert("L")
+
 
 # Rotate if width > height
 rotated = False
@@ -37,11 +39,15 @@ def sender():
 
     ser.write(width.to_bytes(2, 'little'))
     ser.write(height.to_bytes(2, 'little'))
+
     ser.write(data)
 
-    # for b in data:
-    #     ser.write(bytes([b]))
-    #     time.sleep(0.01)  # 200 ms delay per byte
+    # pack_size = 4200
+    # for i in range(0, len(data), pack_size):
+    #     pack = data[i:i + pack_size]
+    #     ser.write(pack)
+    #     ser.flush()  # ensure transmission completes before next pack
+    #     time.sleep(0.1)  # small delay between packs
 
     print("Image sent.")
 

@@ -17,7 +17,7 @@ module bram_1k8_dual (
     output logic [7:0]  dout_b
 );
 
-    // Shared 1K x 8 memory
+    // Shared 2K x 8 memory
     logic [7:0] mem [0:2047]; // Doubled to 2kB each, almost enough for 4k images
 
     // Port A
@@ -182,7 +182,8 @@ always_ff @(posedge clk) begin
         else if (state == DATA) begin
             valid_out <= 0;
             // Accept data, move shift registers appropriately
-            if (valid_in || bytes_input >= number_bytes_to_send) begin
+            if (valid_in || (wr_y >= height)) begin
+            //if (valid_in || bytes_input >= number_bytes_to_send) begin
                 bytes_input <= bytes_input + 1;
                 ready_to_send <= 1;
                 latched_data <= data_in;
@@ -318,7 +319,11 @@ always_comb begin
             next_state = DATA;
             data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
             
-            if (bytes_output == number_bytes_to_send) begin
+//            if (bytes_output == number_bytes_to_send) begin
+//                next_state = STOP;
+//            end
+            
+            if (rd_y >= (height + 1) && rd_ptr > 0) begin
                 next_state = STOP;
             end
         end

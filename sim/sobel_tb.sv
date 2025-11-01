@@ -2,7 +2,7 @@
 
 module sobel_tb();
     
-localparam BAUD_RATE = 115200;
+localparam BAUD_RATE = 3_000_000;
 
 reg clk = 1;
 reg rst = 1;
@@ -113,38 +113,38 @@ initial begin
 
     // Send first block of bytes
     @(posedge baud_tick);
-    send_uart_byte(8'd8);
     send_uart_byte(8'd0);
-    send_uart_byte(8'd8);
+    send_uart_byte(8'd4);
+    send_uart_byte(8'd3);
     send_uart_byte(8'd0);
 
     #50000;
 
     // Send second block of bytes
     @(posedge baud_tick);
-    repeat(8*6) begin
+    repeat(1024*3) begin
         send_uart_byte(bit_index[7:0]);
         bit_index = bit_index + 1;
     end
     
-    rst = 1;
-    #10000000;
-    rst = 0;
-    bit_index = 0;
+//    rst = 1;
+//    #10000000;
+//    rst = 0;
+//    bit_index = 0;
     
-    @(posedge baud_tick);
-    send_uart_byte(8'd12);
-    send_uart_byte(8'd0);
-    send_uart_byte(8'd8);
-    send_uart_byte(8'd0);
+//    @(posedge baud_tick);
+//    send_uart_byte(8'd12);
+//    send_uart_byte(8'd0); // 1024
+//    send_uart_byte(8'd8);
+//    send_uart_byte(8'd0);
     
-    #50000;
+//    #50000;
     
-    @(posedge baud_tick);
-    repeat(12*8) begin
-        send_uart_byte(bit_index[7:0]);
-        bit_index = bit_index + 1;
-    end
+//    @(posedge baud_tick);
+//    repeat(12*8) begin
+//        send_uart_byte(bit_index[7:0]);
+//        bit_index = bit_index + 1;
+//    end
 
     // Wait for remaining data to be transmitted
     #10000000;

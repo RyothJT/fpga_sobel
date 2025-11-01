@@ -43,6 +43,9 @@ After we have the first line and the first two datapoints of the next line, we c
 The COM port is not automatically calibrated. You will have to find which COM part corresponds to the FPGA yourself.
 
 # Goals
+
+- Fix alignment issue on straight lines (somehow warped)?
+
 - Support for images up to an arbitrarily size, assuming one side is less than 4096 pixels. (Currently only works with 1024 pixels due to BRAM structure)
 - Rewrite indexing syntax to be human readable, currently names are misleading
 - Reduce WNS signficantly by pipelining more operations

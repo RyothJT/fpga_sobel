@@ -8,7 +8,8 @@ module top(
         output [15:0] led
 );
 
-localparam BAUD_RATE = 256000; // 256000 Seems to be the max supported by most PCs
+// Tested working up to 6 MBaud
+localparam BAUD_RATE = 256_000; // 256000 Seems to be the max supported by most PCs
 
 wire [7:0] rx_data;
 wire [7:0] tx_data;
