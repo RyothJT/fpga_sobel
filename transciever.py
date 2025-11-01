@@ -6,13 +6,15 @@ import time
 
 # --- Configuration ---
 PORT = 'COM4'
-BAUD = 256_000
+BAUD = 112_000*4 # This seems to max out at 448_000 Baud
 
 k = 0 # number of bottom rows to exclue to guarentee image generation
 
 # --- Load image ---
 # img = Image.open("test_image.jpg").convert("L")
-img = Image.open("loris_480p.png").convert("L")
+# img = Image.open("horiz_480p.png").convert("L")
+img = Image.open("vertical_480p.png").convert("L")
+# img = Image.open("loris_128p.png").convert("L")
 
 
 # Rotate if width > height
@@ -42,12 +44,12 @@ def sender():
 
     ser.write(data)
 
-    # pack_size = 4200
+    # pack_size = 100
     # for i in range(0, len(data), pack_size):
     #     pack = data[i:i + pack_size]
     #     ser.write(pack)
     #     ser.flush()  # ensure transmission completes before next pack
-    #     time.sleep(0.1)  # small delay between packs
+    #     time.sleep(0.001)  # small delay between packs
 
     print("Image sent.")
 

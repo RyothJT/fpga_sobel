@@ -11,8 +11,7 @@ module uart_baud_gen #(
     output reg  baud_tick
 );
 
-localparam integer BAUD_ACC =
-    ((64'd1 * BAUD_RATE * OVERSAMPLE) << ACC_WIDTH) / CLK_FREQ;  // <-- correct order
+localparam BAUD_ACC = ((64'd1 * BAUD_RATE * OVERSAMPLE) << ACC_WIDTH) / CLK_FREQ;  // <-- correct order
 
 reg [ACC_WIDTH-1:0] acc = 0;
 

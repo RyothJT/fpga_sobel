@@ -9,7 +9,8 @@ module top(
 );
 
 // Tested working up to 6 MBaud
-localparam BAUD_RATE = 256_000; // 256000 Seems to be the max supported by most PCs
+// Only 115200, 115200*2, 115200*4, completely works without warping
+localparam BAUD_RATE = 115200 * 4; // 256000 Seems to be the max supported by most PCs
 
 wire [7:0] rx_data;
 wire [7:0] tx_data;

@@ -50,11 +50,12 @@ module sobel_applier #(
     output logic ready_in         // This remains unused because the UART can not stop, but kept for modularity
     
     ,
-    output [7:0] led
+    output [15:0] led
 );
 
 // DEBUG
-assign led = bytes_output[7:0];
+assign led[7:0] = bytes_output[7:0];
+assign led[15:8] = wr_y[7:0];
 
 typedef enum logic [2:0] {
     IDLE,       // Waiting for signal to turn on
@@ -87,7 +88,6 @@ logic right, down, left, up;
 logic [31:0] bytes_input, bytes_output;
 logic [2:0] config_bytes_recieved;
 logic ready_to_send;
-logic [31:0] number_bytes_to_send;
 logic [7:0] latched_data;
 
 // Loop for pipeline delay
@@ -156,7 +156,6 @@ always_ff @(posedge clk) begin
             bytes_input <= 0;
             bytes_output <= 0;
             ready_to_send <= 0;
-            number_bytes_to_send <= 0;
             config_bytes_recieved <= 0;
             valid_out <= 0;
             latched_data <= 0;
@@ -177,25 +176,23 @@ always_ff @(posedge clk) begin
                 endcase
                 config_bytes_recieved <= config_bytes_recieved + 1;
             end
-            number_bytes_to_send <= width * height;
         end
         else if (state == DATA) begin
             valid_out <= 0;
             // Accept data, move shift registers appropriately
-            if (valid_in || (wr_y >= height)) begin // TODO fix DSP
-            //if (valid_in || bytes_input >= number_bytes_to_send) begin
+            if (valid_in) begin // TODO fix DSP
                 bytes_input <= bytes_input + 1;
                 ready_to_send <= 1;
                 latched_data <= data_in;
-                
-                // Wrap line and increment x coordinate
-                // Something is wrong with wr_ptr...
+            end
+            
+            if (wr_y >= height) begin
+                ready_to_send <= 1;
             end
             
             // Conditions for this are hard. TODO
             // Output data, only output when a new data has been recieved or we're at the end of the stream
-            //if (ready_out && ready_to_send) begin
-            if (ready_out && (ready_to_send)) begin
+            if (ready_out && ready_to_send) begin
                 ready_to_send <= 0;
                 
                 if (new_line) begin
@@ -255,12 +252,6 @@ always_ff @(posedge clk) begin
                 rd_y <= rd_y_pipeline;
                 rd_y_pipeline <= wr_y;
             end
-            
-//            // Last row and some extras
-//            else if (ready_out && bytes_input == number_bytes_to_send) begin
-//                bytes_output <= bytes_output + 1;
-//                valid_out <= 1;
-//            end
         end
     end
 end
@@ -318,10 +309,6 @@ always_comb begin
             // Input new data
             next_state = DATA;
             data_out = ((abs_sobel_vertical + abs_sobel_horizontal) >> 3);
-            
-//            if (bytes_output == number_bytes_to_send) begin
-//                next_state = STOP;
-//            end
             
             if (rd_y >= (height + 1) && rd_ptr > 0) begin
                 next_state = STOP;
