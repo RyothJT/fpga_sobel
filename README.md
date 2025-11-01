@@ -24,7 +24,7 @@ When evaluating the actual edges of the image (x = 0, y = height -1...), unknown
 
 # Module Structure
 
-The UART modules constitue the communication for this implementation. They are fairly simple implementations of Mealy machines, although they are currently not structured well. Both modules implement an accumulator-based fractional divider with 32 bits of precision. For 256000 baud at 100 MHz, oversampling by 16x, the true baud rate is 255999.999354. We will drift 90 degrees out of phase after about 1.5 million years. Accuracy is a parameter in the baud rate module and can be modified if resources are extremely scarce.
+The UART modules constitue the communication for this implementation. They are fairly simple implementations of Mealy machines, although they are currently not structured well. Both modules implement an accumulator-based fractional divider with 32 bits of precision. For 448000 baud at 100 MHz, oversampling by 16x, the true baud rate is 447999.998869. It would take approximately 14 minutes for the clocks to get out of sync, assuming all else is ideal. This equates to 40.47 MB, which is enough to fit four grayscale 4k images.
 
 Rx connects to the sobel applier module without an input buffer implemented. It is not needed in this application because we can be absolultely certain that the TX module is sending out data at the same rate. An input buffer could be easily implemented by swapping valid_in, ready_in, and data_in wires from outside the sobel applier module.
 
@@ -44,6 +44,7 @@ The COM port is not automatically calibrated. You will have to find which COM pa
 
 # Goals
 
+- Fix application of sobel operator (currently smears slightly)
 - Reduce variables
 - Rewrite RX and TX modules in SystemVerilog style as proper Mealy machines
 - Rewrite indexing syntax to be human readable, currently names are misleading
