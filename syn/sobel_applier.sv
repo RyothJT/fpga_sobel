@@ -182,7 +182,7 @@ always_ff @(posedge clk) begin
         else if (state == DATA) begin
             valid_out <= 0;
             // Accept data, move shift registers appropriately
-            if (valid_in || (wr_y >= height)) begin
+            if (valid_in || (wr_y >= height)) begin // TODO fix DSP
             //if (valid_in || bytes_input >= number_bytes_to_send) begin
                 bytes_input <= bytes_input + 1;
                 ready_to_send <= 1;
