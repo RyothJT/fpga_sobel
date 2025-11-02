@@ -18,20 +18,20 @@ module bram_1k8_dual (
 );
 
     // Shared 2K x 8 memory
-    logic [7:0] mem [0:1023]; // Doubled to 2kB each, almost enough for 4k images
+    logic [7:0] mem [0:49]; // Doubled to 2kB each, almost enough for 4k images
 
     // Port A
     always_ff @(posedge clk_a) begin
+        dout_a <= mem[addr_a];
         if (we_a)
             mem[addr_a] <= din_a;
-        dout_a <= mem[addr_a];
     end
 
     // Port B
     always_ff @(posedge clk_b) begin
-        if (we_b)
-            mem[addr_b] <= din_b;
         dout_b <= mem[addr_b];
+        if (we_b)
+            mem[addr_b] <= din_b;        
     end
 endmodule
 
@@ -212,17 +212,17 @@ always_ff @(posedge clk) begin
                     BOT: begin
                         window_top[2] <= mid_out;
                         window_mid[2] <= top_out;
-                        window_bot[2] <= bot_out;
+                        window_bot[2] <= latched_data;
                     end
                     MID: begin
                         window_top[2] <= top_out;
                         window_mid[2] <= bot_out;
-                        window_bot[2] <= mid_out;
+                        window_bot[2] <= latched_data;
                     end
                     TOP: begin
                         window_top[2] <= bot_out;
                         window_mid[2] <= mid_out;
-                        window_bot[2] <= top_out;
+                        window_bot[2] <= latched_data;
                     end
                 endcase
                 
