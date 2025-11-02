@@ -127,9 +127,9 @@ initial begin
 //        repeat(3) send_uart_byte(254);
 //    end
 
-    repeat(4) send_uart_byte(0);
+    repeat(17) send_uart_byte(0);
     send_uart_byte(255);
-    repeat(30) send_uart_byte(0);
+    repeat(17) send_uart_byte(0);
 
     // Send second block of bytes
 //    @(posedge baud_tick);

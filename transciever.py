@@ -14,8 +14,8 @@ k = 0 # number of bottom rows to exclue to guarentee image generation
 # img = Image.open("test_image.jpg").convert("L")
 # img = Image.open("horiz_480p.png").convert("L")
 # img = Image.open("vertical_480p.png").convert("L")
-img = Image.open("test_image_3.png").convert("L")
-# img = Image.open("loris_480p.png").convert("L")
+# img = Image.open("test_image_3.png").convert("L")
+img = Image.open("loris_480p.png").convert("L")
 # img = Image.open("loris_2037p.jpg").convert("L")
 
 
@@ -83,6 +83,12 @@ def receiver(timeout=10.0):
     # print(processed)
     print("\nReception complete.")
     result = np.frombuffer(processed, dtype=np.uint8).reshape(((height-k), width))
+
+    # Find max brightness and scale
+    max_val = result.max()
+    if max_val > 0:
+        result = (result.astype(np.float32) * (255.0 / max_val)).astype(np.uint8)
+
     img_out = Image.fromarray(result, mode='L')
 
     # Rotate back if original was rotated
