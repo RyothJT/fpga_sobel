@@ -8,8 +8,7 @@ Outputs the edges of a given image using the sobel operator. A python script dec
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/308c19c3-77b0-444d-a798-06ce48c1b353" width="48%" alt="Before"/>
-  <img src="https://github.com/user-attachments/assets/4e83ea6a-7594-40fc-a76e-e1b46e0edb18" width="48%" alt="After"/>
-
+  <img src="https://github.com/user-attachments/assets/892e9127-5960-4699-a497-67bc3e72f50d" width="48%" alt="After"/>
 </p>
 <p align="center"><b>Before</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>After</b></p>
 
@@ -45,7 +44,7 @@ The COM port is not automatically calibrated. You will have to find which COM pa
 
 # Goals
 
-- Fix application of sobel operator (currently smears slightly)
+
 - Reduce variables
 - Rewrite RX and TX modules in SystemVerilog style as proper Mealy machines
 - Rewrite indexing syntax to be human readable, currently names are misleading
@@ -56,5 +55,6 @@ The COM port is not automatically calibrated. You will have to find which COM pa
 - Easy setup for Vivado
 - Testing using communication method other than UART
 
+- ~~Fix application of sobel operator (currently smears slightly)~~ Data written to RAM at same time as reading caused issues with offsetting the kernel
 - ~~Get rid of number_bytes_to_send in order to not use DSP slice (currently used for ending condition and troubleshooting)~~
 - ~~Fix alignment issue on straight lines (somehow warped)?~~ Fixed by setting baud rate to a multiple of 112000 (may vary by computer)
