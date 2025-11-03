@@ -4,113 +4,79 @@ import serial
 import threading
 import time
 
-# --- Configuration ---
 PORT = 'COM4'
-BAUD = 112_000*4 # This seems to max out at 448_000 Baud
+BAUD = 112_000 * 4  # Max ~448_000 Baud
 
-k = 0 # number of bottom rows to exclue to guarentee image generation
+def process_image(image_path):
+    img = Image.open(image_path).convert("L")
 
-# --- Load image ---
-# img = Image.open("test_image.jpg").convert("L")
-# img = Image.open("horiz_480p.png").convert("L")
-# img = Image.open("vertical_480p.png").convert("L")
-# img = Image.open("test_image_3.png").convert("L")
-img = Image.open("loris_480p.png").convert("L")
-# img = Image.open("loris_2037p.jpg").convert("L")
+    rotated = False
+    if img.width > img.height:
+        img = img.rotate(90, expand=True)
+        rotated = True
 
+    arr = np.array(img, dtype=np.uint8)
+    height, width = arr.shape
+    data = arr.flatten().tobytes()
 
-# Rotate if width > height
-rotated = False
-if img.width > img.height:
-    img = img.rotate(90, expand=True)
-    rotated = True
+    return data, width, height, rotated
 
-arr = np.array(img, dtype=np.uint8)
-height, width = arr.shape
-data = arr.flatten().tobytes()
+def send_and_receive_image(image_path, output_path="output.png"):
+    data, width, height, rotated = process_image(image_path)
 
-# --- Open serial ---
-ser = serial.Serial(PORT, baudrate=BAUD)
+    ser = serial.Serial(PORT, baudrate=BAUD)
+    print("Pixels expected:", width * height)
 
-print("Pixels expected:", width * height)
+    def sender():
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
+        ser.write(width.to_bytes(2, 'little'))
+        ser.write(height.to_bytes(2, 'little'))
+        ser.write(data)
+        print("Image sent.")
 
-# --- Thread functions ---
-import time
+    def receiver(timeout=10.0):
+        print("Start receiving...")
+        processed = bytearray()
+        total = width * height
+        start_time = time.time()
 
-def sender():
-    ser.reset_input_buffer()
-    ser.reset_output_buffer()
+        while len(processed) < total:
+            if ser.in_waiting:
+                processed.append(ser.read(1)[0])
+                start_time = time.time()
+            elif time.time() - start_time > timeout:
+                remaining = total - len(processed)
+                processed.extend(b'\xFF' * remaining)
+                print(f"\nTimeout. Filled {remaining} pixels with white.")
+                break
 
-    ser.write(width.to_bytes(2, 'little'))
-    ser.write(height.to_bytes(2, 'little'))
+        print("\nReception complete.")
+        result = np.frombuffer(processed, dtype=np.uint8).reshape((height, width))
 
-    ser.write(data)
-    # print(data)
+        max_val = result.max()
+        if max_val > 0:
+            result = (result.astype(np.float32) * (255.0 / max_val)).astype(np.uint8)
 
-    # pack_size = 1
-    # for i in range(0, len(data), pack_size):
-    #     pack = data[i:i + pack_size]
-    #     print(pack)
-    #     ser.write(pack)
-    #     ser.flush()  # ensure transmission completes before next pack
-    #     time.sleep(0.5)  # small delay between packs
+        img_out = Image.fromarray(result, mode='L')
+        if rotated:
+            img_out = img_out.rotate(-90, expand=True)
 
-    print("Image sent.")
+        img_out.save(output_path)
+        print(f"Saved {output_path}")
+        return processed
 
+    t1 = threading.Thread(target=sender)
+    t2 = threading.Thread(target=receiver)
 
-def receiver(timeout=10.0):
-    print("Start receiving...")
-    processed = bytearray()
+    t1.start()
+    t2.start()
 
-    total = width * (height - k)
-    start_time = time.time()
+    t1.join()
+    result = t2.join()
 
-    total = width * (height - k)
-    start_time = time.time()
+    ser.close()
+    return result
 
-    while len(processed) < total:
-        if ser.in_waiting:
-            byte = ser.read(1)
-            processed.extend(byte)
-            start_time = time.time()  # reset timer
-            #print(f"\r{len(processed)}/{total} pixels received", end="")
-        elif time.time() - start_time > timeout:
-            remaining = total - len(processed)
-            processed.extend(b'\xFF' * remaining)
-            print(f"\nTimeout. Filled {remaining} pixels with white.")
-            break
-
-    # print(processed)
-    print("\nReception complete.")
-    result = np.frombuffer(processed, dtype=np.uint8).reshape(((height-k), width))
-
-    # Find max brightness and scale
-    max_val = result.max()
-    if max_val > 0:
-        result = (result.astype(np.float32) * (255.0 / max_val)).astype(np.uint8)
-
-    img_out = Image.fromarray(result, mode='L')
-
-    # Rotate back if original was rotated
-    if rotated:
-        img_out = img_out.rotate(-90, expand=True)
-
-    img_out.save("output.png")
-    print("Saved output.png")
-
-    return processed
-
-
-
-
-# --- Run both threads ---
-t1 = threading.Thread(target=sender)
-t2 = threading.Thread(target=receiver)
-
-t1.start()
-t2.start()
-
-t1.join()
-t2.join()
-
-ser.close()
+# Example call
+# send_and_receive_image("input_images/loris_480p.png")

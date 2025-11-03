@@ -18,7 +18,7 @@ module bram_1k8_dual (
 );
 
     // Shared 2K x 8 memory
-    logic [7:0] mem [0:1023]; // Doubled to 2kB each, almost enough for 4k images
+    logic [7:0] mem [0:2047]; // Doubled to 2kB each, almost enough for 4k images
 
     // Port A
     always_ff @(posedge clk_a) begin
@@ -92,7 +92,7 @@ logic ready_to_send;
 logic [7:0] latched_data;
 
 // Loop for pipeline delay
-logic [15:0] rd_y_pipeline;
+logic [15:0] rd_y_pipeline, rd_ptr_pipeline;
 
 bram_1k8_dual top_line (
     // WRITE PORT
@@ -249,19 +249,20 @@ always_ff @(posedge clk) begin
                                    -(effective_mid[0] * 2) + (effective_mid[2] * 2)
                                    -effective_bot[0] + effective_bot[2];
                                    
-                // Pipeline y coordinate
+                // Pipeline read coordinates
                 rd_y <= rd_y_pipeline;
                 rd_y_pipeline <= wr_y;
+                
+                rd_ptr <= rd_ptr_pipeline;
+                rd_ptr_pipeline <= wr_ptr;
             end
         end
     end
 end
 
-
 assign abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
 assign abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
 assign new_line = (wr_ptr == width - 1);
-assign rd_ptr = (wr_ptr >= 2) ? (wr_ptr - 2) : (width - (2 - wr_ptr));
     
     // Update conditions for edge checking
 assign left = (rd_ptr == 0);
