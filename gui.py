@@ -81,7 +81,7 @@ class ImageTransferApp(QWidget):
         label.setPixmap(pixmap.scaled(
             label.width(), label.height(),
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
+            Qt.TransformationMode.FastTransformation
         ))
 
     def resizeEvent(self, event):

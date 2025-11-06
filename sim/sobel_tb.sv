@@ -127,18 +127,16 @@ initial begin
 //        repeat(3) send_uart_byte(254);
 //    end
 
-    repeat(17) send_uart_byte(0);
+    repeat(1) send_uart_byte(0);
     send_uart_byte(255);
-    repeat(17) send_uart_byte(0);
+    repeat(33) send_uart_byte(0);
 
-    // Send second block of bytes
+//     Send second block of bytes
 //    @(posedge baud_tick);
-//    repeat(1024*3) begin
+//    repeat(5*7) begin
 //        send_uart_byte(bit_index[7:0]);
 //        bit_index = bit_index + 1;
 //    end
-    
-    
     
 //    rst = 1;
 //    #10000000;

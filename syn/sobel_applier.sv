@@ -35,6 +35,34 @@ module bram_1k8_dual (
     end
 endmodule
 
+module pipeline_delay #(
+    parameter int WIDTH  = 16,
+    parameter int STAGES = 5
+) (
+    input  logic                 clk,
+    input  logic                 en,
+    input  logic                 rst,   // synchronous reset
+    input  logic [WIDTH-1:0]     din,
+    output logic [WIDTH-1:0]     dout
+);
+    // unpacked array of stage registers
+    logic [WIDTH-1:0] pipe [0:STAGES-1];
+    int i;
+
+    // synchronous reset so simulation/synthesis deterministic
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            for (i = 0; i < STAGES; i = i + 1)
+                pipe[i] <= '0;
+        end else if (en) begin
+            pipe[0] <= din;
+            for (i = 1; i < STAGES; i = i + 1)
+                pipe[i] <= pipe[i-1];
+        end
+    end
+
+    assign dout = pipe[STAGES-1];
+endmodule
 
 module sobel_applier #(
     parameter DATA_BITS_IN = 8,
@@ -90,6 +118,7 @@ logic [31:0] bytes_input, bytes_output;
 logic [2:0] config_bytes_recieved;
 logic ready_to_send;
 logic [7:0] latched_data;
+logic pipeline_rst;
 
 // Loop for pipeline delay
 logic [15:0] rd_y_pipeline, rd_ptr_pipeline;
@@ -99,14 +128,14 @@ bram_1k8_dual top_line (
     .clk_a(clk),
     .we_a(line_we[2]),
     .din_a(latched_data),
-    .addr_a(wr_ptr),
+    .addr_a(wr_ptr[9:0]),
     .dout_a(),
     
     // READ PORT
     .clk_b(clk),
     .we_b(0),
     .din_b(0),
-    .addr_b(wr_ptr),
+    .addr_b(wr_ptr[9:0]),
     .dout_b(top_out)
 );
 
@@ -115,14 +144,14 @@ bram_1k8_dual mid_line (
     .clk_a(clk),
     .we_a(line_we[1]),
     .din_a(latched_data),
-    .addr_a(wr_ptr),
+    .addr_a(wr_ptr[9:0]),
     .dout_a(),
     
     // READ PORT
     .clk_b(clk),
     .we_b(0),
     .din_b(0),
-    .addr_b(wr_ptr),
+    .addr_b(wr_ptr[9:0]),
     .dout_b(mid_out)
 );
 
@@ -131,15 +160,31 @@ bram_1k8_dual bot_line (
     .clk_a(clk),
     .we_a(line_we[0]),
     .din_a(latched_data),
-    .addr_a(wr_ptr),
+    .addr_a(wr_ptr[9:0]),
     .dout_a(),
     
     // READ PORT
     .clk_b(clk),
     .we_b(0),
     .din_b(0),
-    .addr_b(wr_ptr),
+    .addr_b(wr_ptr[9:0]),
     .dout_b(bot_out)
+);
+
+pipeline_delay #(.WIDTH(16), .STAGES(2)) rd_ptr_delay (
+    .clk(clk),
+    .rst(rst || pipeline_rst),
+    .en(ready_out && ready_to_send),
+    .din(wr_ptr),
+    .dout(rd_ptr)
+);
+
+pipeline_delay #(.WIDTH(16), .STAGES(2)) rd_y_delay (
+    .clk(clk),
+    .rst(rst || pipeline_rst),
+    .en(ready_out && ready_to_send),
+    .din(wr_y),
+    .dout(rd_y)
 );
 
 always_ff @(posedge clk) begin
@@ -148,18 +193,18 @@ always_ff @(posedge clk) begin
         line_we <= TOP; // default of top?
     end else begin
         state <= next_state;
+        pipeline_rst <= 0;
         
         if (state == IDLE) begin
             wr_ptr <= 0;
             wr_y <= 0;
-            rd_y <= 0;
-            rd_y_pipeline <= 0;
             bytes_input <= 0;
             bytes_output <= 0;
             ready_to_send <= 0;
             config_bytes_recieved <= 0;
             valid_out <= 0;
             latched_data <= 0;
+            pipeline_rst <= 1;
             
             // wait until we recieve a byte
             if (valid_in) begin
@@ -207,22 +252,24 @@ always_ff @(posedge clk) begin
                 end
                 else wr_ptr <= wr_ptr + 1;
                         
+                // STAGE 1: Shift window
                 // TODO Make this understandable   
+                window_bot[2] <= latched_data;
                 case(line_we)
                     BOT: begin
                         window_top[2] <= mid_out;
                         window_mid[2] <= top_out;
-                        window_bot[2] <= latched_data;
+//                        window_bot[2] <= latched_data;
                     end
                     MID: begin
                         window_top[2] <= top_out;
                         window_mid[2] <= bot_out;
-                        window_bot[2] <= latched_data;
+//                        window_bot[2] <= latched_data;
                     end
                     TOP: begin
                         window_top[2] <= bot_out;
                         window_mid[2] <= mid_out;
-                        window_bot[2] <= latched_data;
+//                        window_bot[2] <= latched_data;
                     end
                 endcase
                 
@@ -235,12 +282,7 @@ always_ff @(posedge clk) begin
                 
                 window_bot[0] <= window_bot[1];
                 window_bot[1] <= window_bot[2];
-        
-                if (rd_y >= 1) begin
-                    bytes_output <= bytes_output + 1;
-                    valid_out <= 1;
-                end
-
+                
                 // Process data
                 sobel_vertical <= -effective_top[0]-(effective_top[1] * 2)-effective_top[2]
                                   +effective_bot[0]+(effective_bot[1] * 2)+effective_bot[2];
@@ -249,12 +291,44 @@ always_ff @(posedge clk) begin
                                    -(effective_mid[0] * 2) + (effective_mid[2] * 2)
                                    -effective_bot[0] + effective_bot[2];
                                    
-                // Pipeline read coordinates
-                rd_y <= rd_y_pipeline;
-                rd_y_pipeline <= wr_y;
+                    // TOP LEFT
+                effective_top[0] <= (up || left) ? 0 : window_top[0];
+                //assign effective_top[0] = (up) ? (left) ? window_mid[0] : window_top[1] : window_top[0];
+                    // TOP MIDDLE
+                effective_top[1] <= up ? 0 : window_top[1];
+                //assign effective_top[1] = up ? window_mid[1] : window_top[1];
+                    // TOP RIGHT
+                effective_top[2] <= (up || right) ? 0 : window_top[2];
+                //assign effective_top[2] = up ? right ? window_mid[2] : window_top[1] : window_top[2];
+                    // MIDDLE RIGHT
+                effective_mid[2] <= right ? 0 : window_mid[2];
+                //assign effective_mid[2] = right ? window_mid[1] : window_mid[2];
+                    // BOTTOM RIGHT
+                effective_bot[2] <= (down || right) ? 0 : window_bot[2];
+                //assign effective_bot[2] = down ? right ? window_mid[2] : window_bot[1] : window_bot[2];
+                    // BOTTOM MIDDLE
+                effective_bot[1] <= down ? 0 : window_bot[1];
+                //assign effective_bot[1] = down ? window_mid[1] : window_bot[1];
+                    // BOTTOM LEFT
+                effective_bot[0] <= (down || left) ? 0 : window_bot[0];
+                //assign effective_bot[0] = down ? left ? window_mid[0] : window_bot[1] : window_bot[0];
+                    // MIDDLE LEFT
+                effective_mid[0] <= left ? 0 : window_mid[0];
+                //assign effective_mid[0] = left ? window_mid[1] : window_mid[0];
+                    // MIDDLE MIDDLE
+                effective_mid[1] <= window_mid[1];
+                                   
+                // Update conditions for edge checking
+//                left <= (rd_ptr == 0);
+//                down <= (rd_y == (height - 0));
+//                right <= (rd_ptr == (width -1));
+//                up <= (rd_y <= 1);
                 
-                rd_ptr <= rd_ptr_pipeline;
-                rd_ptr_pipeline <= wr_ptr;
+        
+                if (rd_y >= 1 && rd_ptr >= 1 || rd_y >= 2) begin
+                    bytes_output <= bytes_output + 1;
+                    valid_out <= 1;
+                end
             end
         end
     end
@@ -264,38 +338,12 @@ assign abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_verti
 assign abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
 assign new_line = (wr_ptr == width - 1);
     
-    // Update conditions for edge checking
+// Update conditions for edge checking
 assign left = (rd_ptr == 0);
 assign down = (rd_y == (height - 0));
 assign right = (rd_ptr == (width -1));
 assign up = (rd_y <= 1);
-    
-    // TOP LEFT
-assign effective_top[0] = (up || left) ? 0 : window_top[0];
-//assign effective_top[0] = (up) ? (left) ? window_mid[0] : window_top[1] : window_top[0];
-    // TOP MIDDLE
-assign effective_top[1] = up ? 0 : window_top[1];
-//assign effective_top[1] = up ? window_mid[1] : window_top[1];
-    // TOP RIGHT
-assign effective_top[2] = (up || right) ? 0 : window_top[2];
-//assign effective_top[2] = up ? right ? window_mid[2] : window_top[1] : window_top[2];
-    // MIDDLE RIGHT
-assign effective_mid[2] = right ? 0 : window_mid[2];
-//assign effective_mid[2] = right ? window_mid[1] : window_mid[2];
-    // BOTTOM RIGHT
-assign effective_bot[2] = (down || right) ? 0 : window_bot[2];
-//assign effective_bot[2] = down ? right ? window_mid[2] : window_bot[1] : window_bot[2];
-    // BOTTOM MIDDLE
-assign effective_bot[1] = down ? 0 : window_bot[1];
-//assign effective_bot[1] = down ? window_mid[1] : window_bot[1];
-    // BOTTOM LEFT
-assign effective_bot[0] = (down || left) ? 0 : window_bot[0];
-//assign effective_bot[0] = down ? left ? window_mid[0] : window_bot[1] : window_bot[0];
-    // MIDDLE LEFT
-assign effective_mid[0] = left ? 0 : window_mid[0];
-//assign effective_mid[0] = left ? window_mid[1] : window_mid[0];
-    // MIDDLE MIDDLE
-assign effective_mid[1] = window_mid[1];
+
 
 // Compute nextstate and output
 always_comb begin
@@ -318,8 +366,8 @@ always_comb begin
         DATA: begin
             // Input new data
             next_state = DATA;
-            sobel_sum = (abs_sobel_vertical + abs_sobel_horizontal);
             data_out = (sobel_sum >> 3);
+            sobel_sum = (abs_sobel_vertical + abs_sobel_horizontal);
             
             if (rd_y >= (height + 1) && rd_ptr > 0) begin
                 next_state = STOP;
