@@ -103,11 +103,12 @@ typedef enum logic [2:0] {
 
 state_t state, next_state;
 
-line_write_enable_t line_we;
+line_write_enable_t line_write_mask;
 
-logic [15:0] width, height, wr_ptr, rd_ptr, wr_y, rd_y;
+logic [15:0] width, height, write_x, read_x, write_y, read_y;
 logic [7:0] top_out, mid_out, bot_out;
-logic [7:0] window_top[0:2], window_mid[0:2], window_bot[0:2];
+logic [7:0] line_out [0:2];
+logic [7:0] window [0:2][0:2];
 logic [7:0] effective_top[0:2], effective_mid[0:2], effective_bot[0:2];
 logic [11:0] sobel_vertical, sobel_horizontal;
 logic [10:0] abs_sobel_vertical, abs_sobel_horizontal;
@@ -120,84 +121,58 @@ logic ready_to_send;
 logic [7:0] latched_data;
 logic pipeline_rst;
 
-// Loop for pipeline delay
-logic [15:0] rd_y_pipeline, rd_ptr_pipeline;
 
-bram_1k8_dual top_line (
-    // WRITE PORT
-    .clk_a(clk),
-    .we_a(line_we[2]),
-    .din_a(latched_data),
-    .addr_a(wr_ptr[9:0]),
-    .dout_a(),
-    
-    // READ PORT
-    .clk_b(clk),
-    .we_b(0),
-    .din_b(0),
-    .addr_b(wr_ptr[9:0]),
-    .dout_b(top_out)
-);
+logic [15:0] read_y_pipeline, read_x_pipeline;
 
-bram_1k8_dual mid_line (
-    // WRITE PORT
-    .clk_a(clk),
-    .we_a(line_we[1]),
-    .din_a(latched_data),
-    .addr_a(wr_ptr[9:0]),
-    .dout_a(),
-    
-    // READ PORT
-    .clk_b(clk),
-    .we_b(0),
-    .din_b(0),
-    .addr_b(wr_ptr[9:0]),
-    .dout_b(mid_out)
-);
+assign top_out = line_out[2];
+assign mid_out = line_out[1];
+assign bot_out = line_out[0];
 
-bram_1k8_dual bot_line (
-    // WRITE PORT
-    .clk_a(clk),
-    .we_a(line_we[0]),
-    .din_a(latched_data),
-    .addr_a(wr_ptr[9:0]),
-    .dout_a(),
-    
-    // READ PORT
-    .clk_b(clk),
-    .we_b(0),
-    .din_b(0),
-    .addr_b(wr_ptr[9:0]),
-    .dout_b(bot_out)
-);
+genvar g;
+for (g = 0; g < 3; g++) begin : line_bram
+    bram_1k8_dual line_inst (
+        .clk_a(clk),
+        .we_a(line_write_mask[g]),
+        .din_a(latched_data),
+        .addr_a(write_x[9:0]),
+        .dout_a(),
+        .clk_b(clk),
+        .we_b(0),
+        .din_b(0),
+        .addr_b(write_x[9:0]),
+        .dout_b(line_out[g])
+    );
+end
 
-pipeline_delay #(.WIDTH(16), .STAGES(2)) rd_ptr_delay (
+pipeline_delay #(.WIDTH(16), .STAGES(2)) read_x_delay (
     .clk(clk),
     .rst(rst || pipeline_rst),
     .en(ready_out && ready_to_send),
-    .din(wr_ptr),
-    .dout(rd_ptr)
+    .din(write_x),
+    .dout(read_x)
 );
 
-pipeline_delay #(.WIDTH(16), .STAGES(2)) rd_y_delay (
+pipeline_delay #(.WIDTH(16), .STAGES(2)) read_y_delay (
     .clk(clk),
     .rst(rst || pipeline_rst),
     .en(ready_out && ready_to_send),
-    .din(wr_y),
-    .dout(rd_y)
+    .din(write_y),
+    .dout(read_y)
 );
+
+int i;
 
 always_ff @(posedge clk) begin
     if (rst) begin
         state <= IDLE;
-        line_we <= TOP; // default of top?
+        line_write_mask <= TOP; // default of top?
     end else begin
         state <= next_state;
         pipeline_rst <= 0;
         
         if (state == IDLE) begin
-            wr_ptr <= 0;
-            wr_y <= 0;
+            write_x <= 0;
+            write_y <= 0;
             bytes_input <= 0;
             bytes_output <= 0;
             ready_to_send <= 0;
@@ -232,7 +207,7 @@ always_ff @(posedge clk) begin
                 latched_data <= data_in;
             end
             
-            if (wr_y >= height) begin
+            if (write_y >= height) begin
                 ready_to_send <= 1;
             end
             
@@ -242,46 +217,40 @@ always_ff @(posedge clk) begin
                 ready_to_send <= 0;
                 
                 if (new_line) begin
-                    wr_ptr <= 0;
-                    wr_y <= wr_y + 1;
-                    case(line_we)
-                        BOT: line_we <= MID;
-                        MID: line_we <= TOP;
-                        TOP: line_we <= BOT;
+                    write_x <= 0;
+                    write_y <= write_y + 1;
+                    case(line_write_mask)
+                        BOT: line_write_mask <= MID;
+                        MID: line_write_mask <= TOP;
+                        TOP: line_write_mask <= BOT;
                     endcase
                 end
-                else wr_ptr <= wr_ptr + 1;
+                else write_x <= write_x + 1;
                         
                 // STAGE 1: Shift window
                 // TODO Make this understandable   
-                window_bot[2] <= latched_data;
-                case(line_we)
+                window[2][2] <= latched_data;
+                case(line_write_mask)
                     BOT: begin
-                        window_top[2] <= mid_out;
-                        window_mid[2] <= top_out;
-//                        window_bot[2] <= latched_data;
+                        window[0][2] <= mid_out;
+                        window[1][2] <= top_out;
                     end
                     MID: begin
-                        window_top[2] <= top_out;
-                        window_mid[2] <= bot_out;
-//                        window_bot[2] <= latched_data;
+                        window[0][2] <= top_out;
+                        window[1][2] <= bot_out;
                     end
                     TOP: begin
-                        window_top[2] <= bot_out;
-                        window_mid[2] <= mid_out;
-//                        window_bot[2] <= latched_data;
+                        window[0][2] <= bot_out;
+                        window[1][2] <= mid_out;
                     end
                 endcase
                 
-                // Shift the window
-                window_top[0] <= window_top[1];
-                window_top[1] <= window_top[2];
-                
-                window_mid[0] <= window_mid[1];
-                window_mid[1] <= window_mid[2];
-                
-                window_bot[0] <= window_bot[1];
-                window_bot[1] <= window_bot[2];
+                // shift left
+                for (i = 0; i < 3; i++) begin
+                    window[i][0] <= window[i][1];
+                    window[i][1] <= window[i][2];
+                end
+                window[2][2] <= latched_data;
                 
                 // Process data
                 sobel_vertical <= -effective_top[0]-(effective_top[1] * 2)-effective_top[2]
@@ -292,40 +261,40 @@ always_ff @(posedge clk) begin
                                    -effective_bot[0] + effective_bot[2];
                                    
                     // TOP LEFT
-                effective_top[0] <= (up || left) ? 0 : window_top[0];
-                //assign effective_top[0] = (up) ? (left) ? window_mid[0] : window_top[1] : window_top[0];
+                effective_top[0] <= (up || left) ? 0 : window[0][0];
+                //assign effective_top[0] = (up) ? (left) ? window[1][0] : window[0][1] : window[0][0];
                     // TOP MIDDLE
-                effective_top[1] <= up ? 0 : window_top[1];
-                //assign effective_top[1] = up ? window_mid[1] : window_top[1];
+                effective_top[1] <= up ? 0 : window[0][1];
+                //assign effective_top[1] = up ? window[1][1] : window[0][1];
                     // TOP RIGHT
-                effective_top[2] <= (up || right) ? 0 : window_top[2];
-                //assign effective_top[2] = up ? right ? window_mid[2] : window_top[1] : window_top[2];
+                effective_top[2] <= (up || right) ? 0 : window[0][2];
+                //assign effective_top[2] = up ? right ? window[1][2] : window[0][1] : window[0][2];
                     // MIDDLE RIGHT
-                effective_mid[2] <= right ? 0 : window_mid[2];
-                //assign effective_mid[2] = right ? window_mid[1] : window_mid[2];
+                effective_mid[2] <= right ? 0 : window[1][2];
+                //assign effective_mid[2] = right ? window[1][1] : window[1][2];
                     // BOTTOM RIGHT
-                effective_bot[2] <= (down || right) ? 0 : window_bot[2];
-                //assign effective_bot[2] = down ? right ? window_mid[2] : window_bot[1] : window_bot[2];
+                effective_bot[2] <= (down || right) ? 0 : window[2][2];
+                //assign effective_bot[2] = down ? right ? window[1][2] : window[2][1] : window[2][2];
                     // BOTTOM MIDDLE
-                effective_bot[1] <= down ? 0 : window_bot[1];
-                //assign effective_bot[1] = down ? window_mid[1] : window_bot[1];
+                effective_bot[1] <= down ? 0 : window[2][1];
+                //assign effective_bot[1] = down ? window[1][1] : window[2][1];
                     // BOTTOM LEFT
-                effective_bot[0] <= (down || left) ? 0 : window_bot[0];
-                //assign effective_bot[0] = down ? left ? window_mid[0] : window_bot[1] : window_bot[0];
+                effective_bot[0] <= (down || left) ? 0 : window[2][0];
+                //assign effective_bot[0] = down ? left ? window[1][0] : window[2][1] : window[2][0];
                     // MIDDLE LEFT
-                effective_mid[0] <= left ? 0 : window_mid[0];
-                //assign effective_mid[0] = left ? window_mid[1] : window_mid[0];
+                effective_mid[0] <= left ? 0 : window[1][0];
+                //assign effective_mid[0] = left ? window[1][1] : window[1][0];
                     // MIDDLE MIDDLE
-                effective_mid[1] <= window_mid[1];
+                effective_mid[1] <= window[1][1];
                                    
                 // Update conditions for edge checking
-//                left <= (rd_ptr == 0);
-//                down <= (rd_y == (height - 0));
-//                right <= (rd_ptr == (width -1));
-//                up <= (rd_y <= 1);
+//                left <= (read_x == 0);
+//                down <= (read_y == (height - 0));
+//                right <= (read_x == (width -1));
+//                up <= (read_y <= 1);
                 
         
-                if (rd_y >= 1 && rd_ptr >= 1 || rd_y >= 2) begin
+                if (read_y >= 1 && read_x >= 1 || read_y >= 2) begin
                     bytes_output <= bytes_output + 1;
                     valid_out <= 1;
                 end
@@ -336,13 +305,13 @@ end
 
 assign abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
 assign abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
-assign new_line = (wr_ptr == width - 1);
+assign new_line = (write_x == width - 1);
     
 // Update conditions for edge checking
-assign left = (rd_ptr == 0);
-assign down = (rd_y == (height - 0));
-assign right = (rd_ptr == (width -1));
-assign up = (rd_y <= 1);
+assign left = (read_x == 0);
+assign down = (read_y == (height - 0));
+assign right = (read_x == (width -1));
+assign up = (read_y <= 1);
 
 
 // Compute nextstate and output
@@ -369,7 +338,7 @@ always_comb begin
             data_out = (sobel_sum >> 3);
             sobel_sum = (abs_sobel_vertical + abs_sobel_horizontal);
             
-            if (rd_y >= (height + 1) && rd_ptr > 0) begin
+            if (read_y >= (height + 1) && read_x > 0) begin
                 next_state = STOP;
             end
         end
