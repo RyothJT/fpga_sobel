@@ -1,6 +1,6 @@
 Personal project using Basys-3 FPGA developement board (XC7A35T-1CPG236C).
 
-No separate IP used. All code written by Justin Troth, with the exception of the adapation of the .gitignore file.
+No separate IP used.
 
 # Process
 
