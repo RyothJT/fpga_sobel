@@ -3,349 +3,355 @@
 // Move to separate module eventually
 module bram_1k8_dual (
     // Port A
-    input  logic        clk_a,
-    input  logic        we_a,
-    input  logic [9:0]  addr_a,
-    input  logic [7:0]  din_a,
-    output logic [7:0]  dout_a,
+    input  logic       clk_a,
+    input  logic       we_a,
+    input  logic [9:0] addr_a,
+    input  logic [7:0] din_a,
+    output logic [7:0] dout_a,
 
     // Port B
-    input  logic        clk_b,
-    input  logic        we_b,
-    input  logic [9:0]  addr_b,
-    input  logic [7:0]  din_b,
-    output logic [7:0]  dout_b
+    input  logic       clk_b,
+    input  logic       we_b,
+    input  logic [9:0] addr_b,
+    input  logic [7:0] din_b,
+    output logic [7:0] dout_b
 );
 
-    // Shared 2K x 8 memory
-    logic [7:0] mem [0:2047]; // Doubled to 2kB each, almost enough for 4k images
+  // Shared 2K x 8 memory
+  logic [7:0] mem[2048];  // Doubled to 2kB each, almost enough for 4k images
 
-    // Port A
-    always_ff @(posedge clk_a) begin
-        dout_a <= mem[addr_a];
-        if (we_a)
-            mem[addr_a] <= din_a;
-    end
+  // Port A
+  always_ff @(posedge clk_a) begin
+    dout_a <= mem[addr_a];
+    if (we_a) mem[addr_a] <= din_a;
+  end
 
-    // Port B
-    always_ff @(posedge clk_b) begin
-        dout_b <= mem[addr_b];
-        if (we_b)
-            mem[addr_b] <= din_b;        
-    end
+  // Port B
+  always_ff @(posedge clk_b) begin
+    dout_b <= mem[addr_b];
+    if (we_b) mem[addr_b] <= din_b;
+  end
 endmodule
 
 module pipeline_delay #(
     parameter int WIDTH  = 16,
     parameter int STAGES = 5
 ) (
-    input  logic                 clk,
-    input  logic                 en,
-    input  logic                 rst,   // synchronous reset
-    input  logic [WIDTH-1:0]     din,
-    output logic [WIDTH-1:0]     dout
+    input  logic             clk,
+    input  logic             en,
+    input  logic             rst,  // synchronous reset
+    input  logic [WIDTH-1:0] din,
+    output logic [WIDTH-1:0] dout
 );
-    // unpacked array of stage registers
-    logic [WIDTH-1:0] pipe [0:STAGES-1];
-    int i;
+  // unpacked array of stage registers
+  logic [WIDTH-1:0] pipe[STAGES];
+  int i;
 
-    // synchronous reset so simulation/synthesis deterministic
-    always_ff @(posedge clk) begin
-        if (rst) begin
-            for (i = 0; i < STAGES; i = i + 1)
-                pipe[i] <= '0;
-        end else if (en) begin
-            pipe[0] <= din;
-            for (i = 1; i < STAGES; i = i + 1)
-                pipe[i] <= pipe[i-1];
-        end
+  // synchronous reset so simulation/synthesis deterministic
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      for (i = 0; i < STAGES; i = i + 1) pipe[i] <= '0;
+    end else if (en) begin
+      pipe[0] <= din;
+      for (i = 1; i < STAGES; i = i + 1) pipe[i] <= pipe[i-1];
     end
+  end
 
-    assign dout = pipe[STAGES-1];
+  assign dout = pipe[STAGES-1];
 endmodule
 
 module sobel_applier #(
-    parameter DATA_BITS_IN = 8,
-    parameter MAX_WIDTH = 32
-)(
-    input clk,
-    input rst,
-    input [(DATA_BITS_IN - 1):0] data_in,
-    input valid_in,
-    input ready_out,
+    parameter int DATA_BITS_IN = 8,
+    parameter int MAX_WIDTH = 32
+) (
+    input                               clk,
+    input                               rst,
+    input        [(DATA_BITS_IN - 1):0] data_in,
+    input                               valid_in,
+    input                               ready_out,
     output logic [(DATA_BITS_IN - 1):0] data_out,
-    output logic valid_out,
-    output logic ready_in         // This remains unused because the UART can not stop, but kept for modularity
-    
-    ,
-    output [15:0] led
+    output logic                        valid_out,
+    output logic                        ready_in    // This remains unused because the
+                                                    // UART can not stop, but kept for
+                                                    // modularity
+
+    , output [15:0] led
 );
 
-// DEBUG
-assign led[7:0] = bytes_output[7:0];
-assign led[15:8] = latched_data[7:0];
+  // DEBUG
+  assign led[7:0]  = bytes_output[7:0];
+  assign led[15:8] = latched_data[7:0];
 
-typedef enum logic [2:0] {
-    IDLE,       // Waiting for signal to turn on
-    STARTUP,    // Get dimensions of the image
+  typedef enum logic [2:0] {
+    IDLE,     // Waiting for signal to turn on
+    STARTUP,  // Get dimensions of the image
     DATA,
-//    DATA_IN,
-//    DATA_INOUT,       // 
-//    DATA_OUT,   // Output the remaining last row of multiplications after all data recieved
-    STOP        // Reach the calculated end of image
-} state_t;
+    //    DATA_IN,
+    //    DATA_INOUT,       //
+    //    DATA_OUT,   // Output the remaining last row of multiplications after all data recieved
+    STOP      // Reach the calculated end of image
+  } state_t;
 
-typedef enum logic [2:0] {
+  typedef enum logic [2:0] {
     TOP = 3'b100,
     MID = 3'b010,
     BOT = 3'b001
-} line_write_enable_t;
+  } line_write_enable_t;
 
-state_t state, next_state;
+  state_t state, next_state;
 
-line_write_enable_t line_write_mask;
+  line_write_enable_t line_write_mask;
 
-logic [15:0] width, height, write_x, read_x, write_y, read_y;
-logic [7:0] top_out, mid_out, bot_out;
-logic [7:0] line_out [0:2];
-logic [7:0] window [0:2][0:2];
-logic [7:0] effective_top[0:2], effective_mid[0:2], effective_bot[0:2];
-logic [11:0] sobel_vertical, sobel_horizontal;
-logic [10:0] abs_sobel_vertical, abs_sobel_horizontal;
-logic [11:0] sobel_sum;
-logic new_line;
-logic right, down, left, up;
-logic [31:0] bytes_input, bytes_output;
-logic [2:0] config_bytes_recieved;
-logic ready_to_send;
-logic [7:0] latched_data;
-logic pipeline_rst;
+  logic [15:0] width, height, write_x, read_x, write_y, read_y;
+  logic [7:0] top_out, mid_out, bot_out;
+  logic [7:0] line_out[3];
+  logic [7:0] window  [3] [3];
+  logic [7:0] effective_top[3], effective_mid[3], effective_bot[3];
+  logic [11:0] sobel_vertical, sobel_horizontal;
+  logic [10:0] abs_sobel_vertical, abs_sobel_horizontal;
+  logic [11:0] sobel_sum;
+  logic new_line;
+  logic right, down, left, up;
+  logic [31:0] bytes_input, bytes_output;
+  logic [2:0] config_bytes_recieved;
+  logic ready_to_send;
+  logic [7:0] latched_data;
+  logic pipeline_rst;
 
 
-logic [15:0] read_y_pipeline, read_x_pipeline;
+  logic [15:0] read_y_pipeline, read_x_pipeline;
 
-assign top_out = line_out[2];
-assign mid_out = line_out[1];
-assign bot_out = line_out[0];
+  assign top_out = line_out[2];
+  assign mid_out = line_out[1];
+  assign bot_out = line_out[0];
 
-genvar g;
-for (g = 0; g < 3; g++) begin : line_bram
+  genvar g;
+  for (g = 0; g < 3; g++) begin : g_line_bram
     bram_1k8_dual line_inst (
-        .clk_a(clk),
-        .we_a(line_write_mask[g]),
-        .din_a(latched_data),
+        .clk_a (clk),
+        .we_a  (line_write_mask[g]),
+        .din_a (latched_data),
         .addr_a(write_x[9:0]),
         .dout_a(),
-        .clk_b(clk),
-        .we_b(0),
-        .din_b(0),
+        .clk_b (clk),
+        .we_b  (0),
+        .din_b (0),
         .addr_b(write_x[9:0]),
         .dout_b(line_out[g])
     );
-end
+  end
 
-pipeline_delay #(.WIDTH(16), .STAGES(2)) read_x_delay (
-    .clk(clk),
-    .rst(rst || pipeline_rst),
-    .en(ready_out && ready_to_send),
-    .din(write_x),
-    .dout(read_x)
-);
+  pipeline_delay #(
+      .WIDTH (16),
+      .STAGES(2)
+  ) read_x_delay (
+      .clk (clk),
+      .rst (rst || pipeline_rst),
+      .en  (ready_out && ready_to_send),
+      .din (write_x),
+      .dout(read_x)
+  );
 
-pipeline_delay #(.WIDTH(16), .STAGES(2)) read_y_delay (
-    .clk(clk),
-    .rst(rst || pipeline_rst),
-    .en(ready_out && ready_to_send),
-    .din(write_y),
-    .dout(read_y)
-);
+  pipeline_delay #(
+      .WIDTH (16),
+      .STAGES(2)
+  ) read_y_delay (
+      .clk (clk),
+      .rst (rst || pipeline_rst),
+      .en  (ready_out && ready_to_send),
+      .din (write_y),
+      .dout(read_y)
+  );
 
-int i;
+  int i;
 
-always_ff @(posedge clk) begin
+  always_ff @(posedge clk) begin
     if (rst) begin
-        state <= IDLE;
-        line_write_mask <= TOP; // default of top?
+      state <= IDLE;
+      line_write_mask <= TOP;  // default of top?
     end else begin
-        state <= next_state;
-        pipeline_rst <= 0;
-        
-        if (state == IDLE) begin
+      state <= next_state;
+      pipeline_rst <= 0;
+
+      if (state == IDLE) begin
+        write_x <= 0;
+        write_y <= 0;
+        bytes_input <= 0;
+        bytes_output <= 0;
+        ready_to_send <= 0;
+        config_bytes_recieved <= 0;
+        valid_out <= 0;
+        latched_data <= 0;
+        pipeline_rst <= 1;
+
+        // wait until we recieve a byte
+        if (valid_in) begin
+          width[7:0] <= data_in[7:0];
+          config_bytes_recieved <= 1;
+        end
+      end else if (state == STARTUP) begin
+        if (valid_in) begin
+          case (config_bytes_recieved)
+            1: width[15:8] <= data_in[7:0];
+            2: height[7:0] <= data_in[7:0];
+            3: height[15:8] <= data_in[7:0];
+            default: ;
+          endcase
+          config_bytes_recieved <= config_bytes_recieved + 1;
+        end
+      end else if (state == DATA) begin
+        valid_out <= 0;
+        // Accept data, move shift registers appropriately
+        if (valid_in) begin  // TODO fix DSP
+          bytes_input   <= bytes_input + 1;
+          ready_to_send <= 1;
+          latched_data  <= data_in;
+        end
+
+        if (write_y >= height) begin
+          ready_to_send <= 1;
+        end
+
+        // Conditions for this are hard. TODO
+        // Output data, only output when a new data has been recieved or we're at the end of the stream
+        if (ready_out && ready_to_send) begin
+          ready_to_send <= 0;
+
+          if (new_line) begin
             write_x <= 0;
-            write_y <= 0;
-            bytes_input <= 0;
-            bytes_output <= 0;
-            ready_to_send <= 0;
-            config_bytes_recieved <= 0;
-            valid_out <= 0;
-            latched_data <= 0;
-            pipeline_rst <= 1;
-            
-            // wait until we recieve a byte
-            if (valid_in) begin
-                width[7:0] <= data_in[7:0];
-                config_bytes_recieved <= 1;
+            write_y <= write_y + 1;
+            case (line_write_mask)
+              BOT: line_write_mask <= MID;
+              MID: line_write_mask <= TOP;
+              TOP: line_write_mask <= BOT;
+              default: line_write_mask <= 0;
+            endcase
+          end else write_x <= write_x + 1;
+
+          // STAGE 1: Shift window
+          // TODO Make this understandable
+          window[2][2] <= latched_data;
+          case (line_write_mask)
+            BOT: begin
+              window[0][2] <= mid_out;
+              window[1][2] <= top_out;
             end
-        end
-        else if (state == STARTUP) begin
-            if (valid_in) begin
-                case (config_bytes_recieved)
-                    1: width[15:8] <= data_in[7:0];
-                    2: height[7:0] <= data_in[7:0];
-                    3: height[15:8] <= data_in[7:0];
-                    default: ;
-                endcase
-                config_bytes_recieved <= config_bytes_recieved + 1;
+            MID: begin
+              window[0][2] <= top_out;
+              window[1][2] <= bot_out;
             end
-        end
-        else if (state == DATA) begin
-            valid_out <= 0;
-            // Accept data, move shift registers appropriately
-            if (valid_in) begin // TODO fix DSP
-                bytes_input <= bytes_input + 1;
-                ready_to_send <= 1;
-                latched_data <= data_in;
+            TOP: begin
+              window[0][2] <= bot_out;
+              window[1][2] <= mid_out;
             end
-            
-            if (write_y >= height) begin
-                ready_to_send <= 1;
+            default: begin
+              window[0][2] <= 0;
+              window[1][2] <= 0;
             end
-            
-            // Conditions for this are hard. TODO
-            // Output data, only output when a new data has been recieved or we're at the end of the stream
-            if (ready_out && ready_to_send) begin
-                ready_to_send <= 0;
-                
-                if (new_line) begin
-                    write_x <= 0;
-                    write_y <= write_y + 1;
-                    case(line_write_mask)
-                        BOT: line_write_mask <= MID;
-                        MID: line_write_mask <= TOP;
-                        TOP: line_write_mask <= BOT;
-                    endcase
-                end
-                else write_x <= write_x + 1;
-                        
-                // STAGE 1: Shift window
-                // TODO Make this understandable   
-                window[2][2] <= latched_data;
-                case(line_write_mask)
-                    BOT: begin
-                        window[0][2] <= mid_out;
-                        window[1][2] <= top_out;
-                    end
-                    MID: begin
-                        window[0][2] <= top_out;
-                        window[1][2] <= bot_out;
-                    end
-                    TOP: begin
-                        window[0][2] <= bot_out;
-                        window[1][2] <= mid_out;
-                    end
-                endcase
-                
-                // shift left
-                for (i = 0; i < 3; i++) begin
-                    window[i][0] <= window[i][1];
-                    window[i][1] <= window[i][2];
-                end
-                window[2][2] <= latched_data;
-                
-                // Process data
-                sobel_vertical <= -effective_top[0]-(effective_top[1] * 2)-effective_top[2]
+          endcase
+
+          // shift left
+          for (i = 0; i < 3; i++) begin
+            window[i][0] <= window[i][1];
+            window[i][1] <= window[i][2];
+          end
+          window[2][2] <= latched_data;
+
+          // Process data
+          sobel_vertical <= -effective_top[0]-(effective_top[1] * 2)-effective_top[2]
                                   +effective_bot[0]+(effective_bot[1] * 2)+effective_bot[2];
-                                  
-                sobel_horizontal <= -effective_top[0] + effective_top[2]
+
+          sobel_horizontal <= -effective_top[0] + effective_top[2]
                                    -(effective_mid[0] * 2) + (effective_mid[2] * 2)
                                    -effective_bot[0] + effective_bot[2];
-                                   
-                    // TOP LEFT
-                effective_top[0] <= (up || left) ? 0 : window[0][0];
-                //assign effective_top[0] = (up) ? (left) ? window[1][0] : window[0][1] : window[0][0];
-                    // TOP MIDDLE
-                effective_top[1] <= up ? 0 : window[0][1];
-                //assign effective_top[1] = up ? window[1][1] : window[0][1];
-                    // TOP RIGHT
-                effective_top[2] <= (up || right) ? 0 : window[0][2];
-                //assign effective_top[2] = up ? right ? window[1][2] : window[0][1] : window[0][2];
-                    // MIDDLE RIGHT
-                effective_mid[2] <= right ? 0 : window[1][2];
-                //assign effective_mid[2] = right ? window[1][1] : window[1][2];
-                    // BOTTOM RIGHT
-                effective_bot[2] <= (down || right) ? 0 : window[2][2];
-                //assign effective_bot[2] = down ? right ? window[1][2] : window[2][1] : window[2][2];
-                    // BOTTOM MIDDLE
-                effective_bot[1] <= down ? 0 : window[2][1];
-                //assign effective_bot[1] = down ? window[1][1] : window[2][1];
-                    // BOTTOM LEFT
-                effective_bot[0] <= (down || left) ? 0 : window[2][0];
-                //assign effective_bot[0] = down ? left ? window[1][0] : window[2][1] : window[2][0];
-                    // MIDDLE LEFT
-                effective_mid[0] <= left ? 0 : window[1][0];
-                //assign effective_mid[0] = left ? window[1][1] : window[1][0];
-                    // MIDDLE MIDDLE
-                effective_mid[1] <= window[1][1];
-                                   
-                // Update conditions for edge checking
-//                left <= (read_x == 0);
-//                down <= (read_y == (height - 0));
-//                right <= (read_x == (width -1));
-//                up <= (read_y <= 1);
-                
-        
-                if (read_y >= 1 && read_x >= 1 || read_y >= 2) begin
-                    bytes_output <= bytes_output + 1;
-                    valid_out <= 1;
-                end
-            end
+
+          // TOP LEFT
+          effective_top[0] <= (up || left) ? 0 : window[0][0];
+          //assign effective_top[0] = (up) ? (left) ? window[1][0] : window[0][1] : window[0][0];
+          // TOP MIDDLE
+          effective_top[1] <= up ? 0 : window[0][1];
+          //assign effective_top[1] = up ? window[1][1] : window[0][1];
+          // TOP RIGHT
+          effective_top[2] <= (up || right) ? 0 : window[0][2];
+          //assign effective_top[2] = up ? right ? window[1][2] : window[0][1] : window[0][2];
+          // MIDDLE RIGHT
+          effective_mid[2] <= right ? 0 : window[1][2];
+          //assign effective_mid[2] = right ? window[1][1] : window[1][2];
+          // BOTTOM RIGHT
+          effective_bot[2] <= (down || right) ? 0 : window[2][2];
+          //assign effective_bot[2] = down ? right ? window[1][2] : window[2][1] : window[2][2];
+          // BOTTOM MIDDLE
+          effective_bot[1] <= down ? 0 : window[2][1];
+          //assign effective_bot[1] = down ? window[1][1] : window[2][1];
+          // BOTTOM LEFT
+          effective_bot[0] <= (down || left) ? 0 : window[2][0];
+          //assign effective_bot[0] = down ? left ? window[1][0] : window[2][1] : window[2][0];
+          // MIDDLE LEFT
+          effective_mid[0] <= left ? 0 : window[1][0];
+          //assign effective_mid[0] = left ? window[1][1] : window[1][0];
+          // MIDDLE MIDDLE
+          effective_mid[1] <= window[1][1];
+
+          // Update conditions for edge checking
+          //                left <= (read_x == 0);
+          //                down <= (read_y == (height - 0));
+          //                right <= (read_x == (width -1));
+          //                up <= (read_y <= 1);
+
+
+          if (read_y >= 1 && read_x >= 1 || read_y >= 2) begin
+            bytes_output <= bytes_output + 1;
+            valid_out <= 1;
+          end
         end
+      end
     end
-end
+  end
 
-assign abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
-assign abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
-assign new_line = (write_x == width - 1);
-    
-// Update conditions for edge checking
-assign left = (read_x == 0);
-assign down = (read_y == (height - 0));
-assign right = (read_x == (width -1));
-assign up = (read_y <= 1);
+  assign abs_sobel_vertical = (sobel_vertical[10]) ? -sobel_vertical : sobel_vertical;
+  assign abs_sobel_horizontal = (sobel_horizontal[10]) ? -sobel_horizontal : sobel_horizontal;
+  assign new_line = (write_x == width - 1);
+
+  // Update conditions for edge checking
+  assign left = (read_x == 0);
+  assign down = (read_y == (height - 0));
+  assign right = (read_x == (width - 1));
+  assign up = (read_y <= 1);
 
 
-// Compute nextstate and output
-always_comb begin
+  // Compute nextstate and output
+  always_comb begin
     // default values
     next_state = state;
-    ready_in = 0;
+    ready_in   = 0;
 
-    case(state)
-        IDLE: begin
-            if (valid_in) begin
-                next_state = STARTUP;
-            end
+    case (state)
+      IDLE: begin
+        if (valid_in) begin
+          next_state = STARTUP;
         end
-        STARTUP: begin
-            next_state = STARTUP;
-            if (config_bytes_recieved == 4) begin
-                next_state = DATA;
-            end
+      end
+      STARTUP: begin
+        next_state = STARTUP;
+        if (config_bytes_recieved == 4) begin
+          next_state = DATA;
         end
-        DATA: begin
-            // Input new data
-            next_state = DATA;
-            data_out = (sobel_sum >> 3);
-            sobel_sum = (abs_sobel_vertical + abs_sobel_horizontal);
-            
-            if (read_y >= (height + 1) && read_x > 0) begin
-                next_state = STOP;
-            end
+      end
+      DATA: begin
+        // Input new data
+        next_state = DATA;
+        data_out   = (sobel_sum >> 3);
+        sobel_sum  = (abs_sobel_vertical + abs_sobel_horizontal);
+
+        if (read_y >= (height + 1) && read_x > 0) begin
+          next_state = STOP;
         end
-        STOP: begin
-            next_state = IDLE;
-        end
+      end
+      STOP: begin
+        next_state = IDLE;
+      end
+      default: next_state = IDLE;
     endcase
-end
+  end
 
 endmodule
